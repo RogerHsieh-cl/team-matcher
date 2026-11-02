@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>自動組隊</title>
+<style>
+  :root {
+    --bg: #f4f7f5; --card: #ffffff; --ink: #13201a; --muted: #55655b; --line: #d8e0db;
+    --accent: #0a8a3d; --accent-ink: #ffffff; --soft: #e2f4e8; --bad: #b42318;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e1511; --card: #151e19; --ink: #e6eee9; --muted: #9fb0a6; --line: #26332c;
+      --accent: #35d072; --accent-ink: #06210f; --soft: #163223; --bad: #ff9a8a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.6 system-ui, -apple-system, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+    padding: max(20px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+             max(24px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  }
+  main { max-width: 480px; margin: 0 auto; display: grid; gap: 16px; }
+  h1 { margin: 0; font-size: 1.25rem; letter-spacing: .02em; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px; display: grid; gap: 12px; }
+  .label { margin: 0; font-size: .8125rem; color: var(--muted); letter-spacing: .06em; }
+  .big { margin: 0; font-size: 2rem; font-weight: 700; line-height: 1.2; }
+  .hint { margin: 0; font-size: .875rem; color: var(--muted); }
+  .members { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  .members li { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+                padding: 10px 14px; border: 1px solid var(--line); border-radius: 8px; min-width: 0; }
+  .members .name { overflow-wrap: anywhere; }
+  .members li.me { background: var(--soft); border-color: var(--accent); }
+  .tag { flex: none; font-size: .75rem; font-weight: 700; color: var(--accent); }
+  form { display: grid; gap: 10px; }
+  label { font-size: .875rem; font-weight: 600; }
+  input[type=text] {
+    width: 100%; padding: 12px 14px; font: inherit; color: var(--ink); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 8px; letter-spacing: .08em;
+  }
+  button {
+    font: inherit; font-weight: 700; padding: 12px 16px; border: 0; border-radius: 8px;
+    background: var(--accent); color: var(--accent-ink); cursor: pointer;
+  }
+  button.ghost { background: transparent; color: var(--accent); border: 1px solid var(--line); font-weight: 600; padding: 8px 14px; }
+  button:disabled { opacity: .55; cursor: default; }
+  :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .msg { margin: 0; min-height: 1.4em; font-size: .875rem; color: var(--bad); }
+  footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>自動組隊</h1>
+  <div id="view" aria-live="polite"><section class="card"><p class="hint">載入中…</p></section></div>
+  <footer id="foot" hidden>
+    <span class="hint" id="stamp"></span>
+    <button class="ghost" id="reload" type="button">重新整理</button>
+  </footer>
+</main>
+
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  /* 這兩個值公開沒關係。邀請碼不要放在前端。 */
+  var LIFF_ID = 'YOUR_LIFF_ID';
+  var GAS_URL = 'https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec';
+  var REFRESH_MS = 60000;
+
+  var ERR = {
+    bad_code: '邀請碼不正確。',
+    locked: '錯誤次數過多，請 10 分鐘後再試。',
+    closed: '報名已結束。',
+    full: '報名人數已滿。',
+    busy: '系統忙碌中，請再按一次。',
+    auth: '登入已逾時，請重新登入。',
+    config: '系統尚未設定完成，請聯絡主辦人。',
+    server: '發生錯誤，請稍後再試。'
+  };
+
+  var view = document.getElementById('view');
+  var foot = document.getElementById('foot');
+  var stamp = document.getElementById('stamp');
+  var current = null;
+  var loading = false;
+
+  /* 建立 DOM。文字一律走 textContent，暱稱不會被當成 HTML。 */
+  function h(tag, props, kids) {
+    var el = document.createElement(tag);
+    Object.keys(props || {}).forEach(function (k) {
+      if (k === 'text') el.textContent = props[k];
+      else if (k.slice(0, 2) === 'on') el.addEventListener(k.slice(2), props[k]);
+      else el.setAttribute(k, props[k]);
+    });
+    (kids || []).forEach(function (c) { if (c) el.appendChild(c); });
+    return el;
+  }
+
+  function fmt(iso) {
+    try {
+      return new Date(iso).toLocaleString('zh-TW', {
+        timeZone: 'Asia/Taipei', month: 'numeric', day: 'numeric', weekday: 'short',
+        hour: '2-digit', minute: '2-digit', hour12: false
+      });
+    } catch (e) { return iso; }
+  }
+
+  function errText(e) { return ERR[e && e.code] || ERR.server; }
+
+  async function api(action, extra) {
+    var res = await fetch(GAS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, /* 避開 CORS preflight */
+      body: JSON.stringify(Object.assign({ action: action, idToken: liff.getIDToken() }, extra || {}))
+    });
+    var data = await res.json();
+    if (!data.ok) { var e = new Error(data.error); e.code = data.error; throw e; }
+    return data;
+  }
+
+  function show(nodes) {
+    view.textContent = '';
+    nodes.forEach(function (n) { view.appendChild(n); });
+    foot.hidden = false;
+  }
+
+  function card(kids) { return h('section', { class: 'card' }, kids); }
+
+  function renderGrouped(r) {
+    var info = r.info || {};
+    var list = h('ul', { class: 'members' }, r.members.map(function (m) {
+      return h('li', { class: m.me ? 'me' : '' }, [
+        h('span', { class: 'name', text: m.name }),
+        m.me ? h('span', { class: 'tag', text: '你' }) : null
+      ]);
+    }));
+    var more = r.members.length < info.groupMax && info.phase !== 'ended';
+    return [card([
+      h('p', { class: 'label', text: '你的組別' }),
+      h('p', { class: 'big', text: r.groupId }),
+      list,
+      h('p', { class: 'hint', text: more
+        ? '目前 ' + r.members.length + ' 人，之後可能再有人加入這一組。'
+        : '共 ' + r.members.length + ' 人。' })
+    ])];
+  }
+
+  function renderWaiting(r) {
+    var info = r.info || {};
+    var hint;
+    if (info.phase === 'early') {
+      hint = '等待人數達 ' + info.batchThreshold + ' 人，或 ' + fmt(info.deadline) + ' 截止時，系統會隨機分組。';
+    } else if (info.phase === 'late') {
+      hint = '有新成員加入時會立即配對，' + fmt(info.closeAt) + ' 前都會持續處理。';
+    } else {
+      hint = '報名已結束，你目前沒有分到組別，請聯絡主辦人。';
+    }
+    return [card([
+      h('p', { class: 'label', text: '狀態' }),
+      h('p', { class: 'big', text: '等待分組' }),
+      h('p', { text: '目前有 ' + r.poolSize + ' 人在等待。' }),
+      h('p', { class: 'hint', text: hint })
+    ])];
+  }
+
+  function renderJoin(r) {
+    if (!r.registrationOpen) {
+      return [card([
+        h('p', { class: 'label', text: '狀態' }),
+        h('p', { class: 'big', text: '報名已結束' })
+      ])];
+    }
+    var info = r.info || {};
+    var input = h('input', { id: 'code', type: 'text', autocomplete: 'off', autocapitalize: 'characters',
+                             maxlength: '32', placeholder: '輸入邀請碼' });
+    var msg = h('p', { class: 'msg', role: 'alert' });
+    var btn = h('button', { type: 'submit', text: '加入組隊' });
+    var form = h('form', { onsubmit: function (ev) {
+      ev.preventDefault();
+      var code = input.value.trim();
+      if (!code) { msg.textContent = '請輸入邀請碼。'; return; }
+      btn.disabled = true; msg.textContent = '';
+      api('join', { code: code }).then(render).catch(function (e) {
+        msg.textContent = errText(e); btn.disabled = false;
+      });
+    } }, [h('label', { for: 'code', text: '邀請碼' }), input, btn, msg]);
+    return [card([
+      h('p', { class: 'label', text: '加入組隊' }),
+      h('p', { class: 'big', text: '輸入邀請碼' }),
+      h('p', { class: 'hint', text: fmt(info.deadline) + ' 截止時，等待中的人會全部分完。每組 ' +
+        info.groupMin + ' 到 ' + info.groupMax + ' 人。' }),
+      form
+    ])];
+  }
+
+  function render(r) {
+    current = r;
+    var nodes = r.status === 'grouped' ? renderGrouped(r)
+              : r.status === 'waiting' ? renderWaiting(r)
+              : renderJoin(r);
+    show(nodes);
+    stamp.textContent = '更新於 ' + new Date().toLocaleTimeString('zh-TW', { hour12: false });
+  }
+
+  function renderError(e) {
+    var nodes = [card([
+      h('p', { class: 'label', text: '發生問題' }),
+      h('p', { text: errText(e) }),
+      h('button', { type: 'button', text: e && e.code === 'auth' ? '重新登入' : '重試', onclick: function () {
+        if (e && e.code === 'auth') relogin(); else refresh(false);
+      } })
+    ])];
+    show(nodes);
+  }
+
+  function relogin() {
+    if (liff.isInClient()) { location.reload(); return; }
+    liff.logout();
+    liff.login({ redirectUri: location.href });
+  }
+
+  async function refresh(silent) {
+    if (loading) return;
+    loading = true;
+    try { render(await api('me')); }
+    catch (e) { if (!silent) renderError(e); }
+    finally { loading = false; }
+  }
+
+  /* 輪詢只在已報名時進行，避免洗掉使用者正在輸入的邀請碼 */
+  function pollable() {
+    return document.visibilityState === 'visible' && current && current.status !== 'unregistered';
+  }
+  setInterval(function () { if (pollable()) refresh(true); }, REFRESH_MS);
+  document.addEventListener('visibilitychange', function () { if (pollable()) refresh(true); });
+  document.getElementById('reload').addEventListener('click', function () { refresh(false); });
+
+  if (LIFF_ID.indexOf('YOUR_') === 0 || GAS_URL.indexOf('YOUR_') !== -1) {
+    show([card([h('p', { class: 'label', text: '尚未設定' }),
+                h('p', { text: '請在 index.html 填入 LIFF_ID 與 GAS_URL。' })])]);
+    foot.hidden = true;
+    return;
+  }
+
+  liff.init({ liffId: LIFF_ID }).then(function () {
+    if (!liff.isLoggedIn()) { liff.login({ redirectUri: location.href }); return; }
+    return refresh(false);
+  }).catch(function () { renderError({ code: 'server' }); });
+})();
+</script>
+</body>
+</html>
