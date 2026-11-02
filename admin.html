@@ -92,7 +92,8 @@
 
   var ERR = {
     forbidden: '你的帳號不是管理員。', confirm: '確認字串不正確。', not_found: '找不到這位成員或組別，可能已被異動，請重新整理。',
-    busy: '系統忙碌中，請再按一次。', auth: '登入已逾時，請重新登入。', config: '系統尚未設定完成。',
+    busy: '系統忙碌中，請再按一次。', auth: '登入已逾時，請重新登入。',
+    relogin_fail: 'LINE 登入狀態一直失效：請關閉這個頁面，再從 LINE 重新開啟。', config: '系統尚未設定完成。',
     bad_request: '不支援的操作。', server: '發生錯誤，請稍後再試。'
   };
   var PHASE = { early: '截止前', late: '截止後', ended: '報名已關閉' };
@@ -133,15 +134,120 @@
     toastTimer = setTimeout(function () { toastEl.hidden = true; }, 4000);
   }
 
-  async function api(action, extra) {
-    var res = await fetch(GAS_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(Object.assign({ action: action, idToken: liff.getIDToken() }, extra || {}))
+  /* ── 連線層：Google 入口偶爾卡住或把 POST 轉成 GET，這裡統一處理 ───────────── */
+  var HEDGE_MS = 6000, LOG_KEY = 'tm_log', RELOGIN_KEY = 'tm_relogin';
+  var T0 = performance.now();
+
+  function isStub(j) { return !!(j && j.ok && j.service && !j.status && !j.counts); }   /* doGet 的版本資訊，不是資料 */
+
+  function queueLog(l) {
+    l.id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    l.device = (navigator.userAgent || '').slice(0, 120);
+    try {
+      var q = JSON.parse(localStorage.getItem(LOG_KEY) || '[]'); q.push(l);
+      localStorage.setItem(LOG_KEY, JSON.stringify(q.slice(-10)));
+    } catch (_) {}
+  }
+  function flushLogs() {
+    var q = []; try { q = JSON.parse(localStorage.getItem(LOG_KEY) || '[]'); } catch (_) {}
+    if (!q.length) return;
+    try {
+      fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'client_log', logs: q }), keepalive: true })
+        .then(function (r) { return r.text(); })
+        .then(function (t) { if (JSON.parse(t).ok) try { localStorage.removeItem(LOG_KEY); } catch (_) {}; })
+        .catch(function () {});
+    } catch (_) {}
+  }
+
+  /* 讀取用「避險請求」：HEDGE_MS 沒回就再送一次（最多 tries 次），誰先回來用誰；
+     收到版本資訊（POST 被轉成 GET）時，下一次改用 GET ?q= 帶資料。 */
+  function gasFetch(body, tries, timeoutMs) {
+    return new Promise(function (resolve, reject) {
+      var started = 0, running = 0, settled = false, lastBad = null, sawStub = false, hedge = null;
+      var ctls = [], notes = [];
+      function finish(fn, v) {
+        if (settled) return; settled = true; clearTimeout(hedge);
+        ctls.forEach(function (c) { try { c.abort(); } catch (_) {} });
+        fn(v);
+      }
+      function start() {
+        clearTimeout(hedge);
+        if (settled || started >= tries) return;
+        if (running > 0) notes.push('#' + started + ' ' + HEDGE_MS / 1000 + ' 秒沒回，加送');
+        var n = ++started, ac = new AbortController(); running++; ctls.push(ac);
+        var to = setTimeout(function () { ac.abort(); }, timeoutMs);
+        if (started < tries) hedge = setTimeout(start, HEDGE_MS);
+        var useGet = sawStub && body.length < 6000;
+        var req = useGet ? fetch(GAS_URL + '?q=' + encodeURIComponent(body), { signal: ac.signal })
+                         : fetch(GAS_URL, { method: 'POST', body: body, signal: ac.signal });
+        req.then(function (res) {
+          return res.text().then(function (txt) {
+            var j = null; try { j = JSON.parse(txt); } catch (_) {}
+            if (j && !isStub(j)) return finish(resolve, { res: res, txt: txt, j: j, n: n, notes: notes });
+            if (isStub(j)) sawStub = true;
+            notes.push('#' + n + (useGet ? 'GET' : '') + ' ' + (j ? '回應不完整' : 'HTTP ' + res.status));
+            lastBad = { res: res, txt: txt, j: j, n: n, notes: notes };
+          });
+        }).catch(function (e) {
+          if (settled) return;
+          notes.push('#' + n + (useGet ? 'GET' : '') + ' ' + (e.name === 'AbortError' ? '逾時' : (e.message || e)));
+          if (!lastBad || lastBad.txt === undefined) lastBad = e;
+        }).then(function () {
+          clearTimeout(to); running--;
+          if (settled) return;
+          if (started < tries) start();                          /* 失敗就馬上補送，不用等避險計時 */
+          else if (running === 0) finish(reject, lastBad);
+        });
+      }
+      start();
     });
-    var data = await res.json();
-    if (!data.ok) { var e = new Error(data.error); e.code = data.error; e.data = data; throw e; }
-    return data;
+  }
+
+  /* LINE 憑證約 1 小時過期：過期就登出再登入換新的，最多 2 次，避免無限重新整理 */
+  function tokenExpired() {
+    try { var d = liff.getDecodedIDToken(); return !d || !d.exp || d.exp * 1000 < Date.now() + 60000; }
+    catch (_) { return true; }
+  }
+  function relogin() {
+    var n = 0;
+    try { n = Number(sessionStorage.getItem(RELOGIN_KEY) || 0); sessionStorage.setItem(RELOGIN_KEY, n + 1); } catch (_) {}
+    if (n >= 2) { try { sessionStorage.removeItem(RELOGIN_KEY); } catch (_) {} return false; }
+    queueLog({ what: '重新登入', result: 'LINE 憑證過期，第 ' + (n + 1) + ' 次', ms: 0, detail: '' });
+    liff.logout();
+    if (liff.isInClient()) location.reload(); else liff.login({ redirectUri: location.href });
+    return true;
+  }
+  function apiErr(code, detail) { var e = new Error(code); e.code = code; e.detail = detail || ''; return e; }
+
+  /* 回傳 {j, probed}；寫入（write 函式）由各頁自己決定怎麼補救 */
+  async function callRaw(body, tries) {
+    var r, tA = performance.now();
+    try { r = await gasFetch(body, tries, 45000); }
+    catch (bad) {
+      if (bad && bad.txt !== undefined) r = bad;
+      else {
+        queueLog({ what: '請求', result: '連線失敗或逾時', ms: Math.round(performance.now() - tA), detail: String(bad && (bad.message || bad)) });
+        throw apiErr('server');
+      }
+    }
+    if (r.n > 1) queueLog({ what: '請求', result: '第 ' + r.n + ' 次才成功', ms: Math.round(performance.now() - tA), detail: r.notes.join('；') });
+    var j = r.j;
+    if (!j || isStub(j)) {
+      var t = ((r.txt || '').match(/<title>([^<]*)<\/title>/i) || [])[1] || '';
+      queueLog({ what: '請求', result: j ? '回應不完整' : '非 JSON HTTP ' + (r.res && r.res.status), ms: Math.round(performance.now() - tA), detail: t.trim() });
+      throw apiErr('server', t.trim());
+    }
+    if (!j.ok) { var e = apiErr(j.error); e.data = j; throw e; }
+    try { sessionStorage.removeItem(RELOGIN_KEY); } catch (_) {}
+    return { j: j, r: r };
+  }
+
+  /* 讀取（admin_state）用避險請求；會改資料的操作只送一次，不能重送（重新分組、移除都不能重複執行） */
+  async function api(action, extra) {
+    if (tokenExpired()) { throw relogin() ? apiErr('auth') : apiErr('relogin_fail'); }
+    var body = JSON.stringify(Object.assign({ action: action, idToken: liff.getIDToken() }, extra || {}));
+    var v = await callRaw(body, action === 'admin_state' ? 3 : 1);
+    return v.j;
   }
 
   /* 所有會改資料的操作都從這裡走：避免連點，成功後直接用回傳的新狀態重畫 */
@@ -153,7 +259,8 @@
       toast(okMsg);
     } catch (e) {
       toast(ERR[e.code] || ERR.server, true);
-      if (e.code === 'not_found') { try { state = await api('admin_state'); } catch (x) {} }
+      /* 資料已被別人改過，或回應遺失（後端可能其實已經做完）：重新讀一次，以畫面為準，不重送 */
+      if (e.code === 'not_found' || e.code === 'server') { try { state = await api('admin_state'); } catch (x) {} }
     } finally { busy = false; render(); }
   }
 
@@ -287,13 +394,13 @@
     view.textContent = '';
     if (e && e.code === 'forbidden') { notAdmin(e).forEach(function (n) { view.appendChild(n); }); return; }
     var again = h('button', { class: 'primary', type: 'button', text: e && e.code === 'auth' ? '重新登入' : '重試', onclick: function () {
-      if (e && e.code === 'auth') { liff.logout(); liff.login({ redirectUri: location.href }); } else load();
+      if (e && e.code === 'auth') { if (!relogin()) fail(apiErr('relogin_fail')); } else load();
     } });
     view.appendChild(h('section', { class: 'card' }, [h('p', { text: ERR[e && e.code] || ERR.server }), again]));
   }
 
   async function load() {
-    try { state = await api('admin_state'); render(); } catch (e) { fail(e); }
+    try { state = await api('admin_state'); render(); flushLogs(); } catch (e) { fail(e); }
   }
 
   reloadBtn.addEventListener('click', function () { if (!busy) { armed = null; load(); } });
@@ -307,7 +414,7 @@
   liff.init({ liffId: LIFF_ID }).then(function () {
     if (!liff.isLoggedIn()) { liff.login({ redirectUri: location.href }); return; }
     return load();
-  }).catch(function () { fail({ code: 'server' }); });
+  }).catch(function (e) { queueLog({ what: '後台開頁', result: 'LIFF 初始化失敗', ms: Math.round(performance.now() - T0), detail: String(e && (e.message || e)) }); fail({ code: 'server' }); });
 })();
 </script>
 </body>

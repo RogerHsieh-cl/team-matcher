@@ -79,6 +79,7 @@
     full: '報名人數已滿。',
     busy: '系統忙碌中，請再按一次。',
     auth: '登入已逾時，請重新登入。',
+    relogin_fail: 'LINE 登入狀態一直失效：請關閉這個頁面，再從 LINE 重新開啟；仍不行請更新 LINE App。',
     config: '系統尚未設定完成，請聯絡主辦人。',
     server: '發生錯誤，請稍後再試。'
   };
@@ -112,15 +113,156 @@
 
   function errText(e) { return ERR[e && e.code] || ERR.server; }
 
-  async function api(action, extra) {
-    var res = await fetch(GAS_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, /* 避開 CORS preflight */
-      body: JSON.stringify(Object.assign({ action: action, idToken: liff.getIDToken() }, extra || {}))
+  /* ── 連線層：Google 入口偶爾卡住或把 POST 轉成 GET，這裡統一處理 ───────────── */
+  var HEDGE_MS = 6000, LOG_KEY = 'tm_log', RELOGIN_KEY = 'tm_relogin';
+  var T0 = performance.now();
+
+  function isStub(j) { return !!(j && j.ok && j.service && !j.status && !j.counts); }   /* doGet 的版本資訊，不是資料 */
+
+  function queueLog(l) {
+    l.id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    l.device = (navigator.userAgent || '').slice(0, 120);
+    try {
+      var q = JSON.parse(localStorage.getItem(LOG_KEY) || '[]'); q.push(l);
+      localStorage.setItem(LOG_KEY, JSON.stringify(q.slice(-10)));
+    } catch (_) {}
+  }
+  function flushLogs() {
+    var q = []; try { q = JSON.parse(localStorage.getItem(LOG_KEY) || '[]'); } catch (_) {}
+    if (!q.length) return;
+    try {
+      fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'client_log', logs: q }), keepalive: true })
+        .then(function (r) { return r.text(); })
+        .then(function (t) { if (JSON.parse(t).ok) try { localStorage.removeItem(LOG_KEY); } catch (_) {}; })
+        .catch(function () {});
+    } catch (_) {}
+  }
+
+  /* 讀取用「避險請求」：HEDGE_MS 沒回就再送一次（最多 tries 次），誰先回來用誰；
+     收到版本資訊（POST 被轉成 GET）時，下一次改用 GET ?q= 帶資料。 */
+  function gasFetch(body, tries, timeoutMs) {
+    return new Promise(function (resolve, reject) {
+      var started = 0, running = 0, settled = false, lastBad = null, sawStub = false, hedge = null;
+      var ctls = [], notes = [];
+      function finish(fn, v) {
+        if (settled) return; settled = true; clearTimeout(hedge);
+        ctls.forEach(function (c) { try { c.abort(); } catch (_) {} });
+        fn(v);
+      }
+      function start() {
+        clearTimeout(hedge);
+        if (settled || started >= tries) return;
+        if (running > 0) notes.push('#' + started + ' ' + HEDGE_MS / 1000 + ' 秒沒回，加送');
+        var n = ++started, ac = new AbortController(); running++; ctls.push(ac);
+        var to = setTimeout(function () { ac.abort(); }, timeoutMs);
+        if (started < tries) hedge = setTimeout(start, HEDGE_MS);
+        var useGet = sawStub && body.length < 6000;
+        var req = useGet ? fetch(GAS_URL + '?q=' + encodeURIComponent(body), { signal: ac.signal })
+                         : fetch(GAS_URL, { method: 'POST', body: body, signal: ac.signal });
+        req.then(function (res) {
+          return res.text().then(function (txt) {
+            var j = null; try { j = JSON.parse(txt); } catch (_) {}
+            if (j && !isStub(j)) return finish(resolve, { res: res, txt: txt, j: j, n: n, notes: notes });
+            if (isStub(j)) sawStub = true;
+            notes.push('#' + n + (useGet ? 'GET' : '') + ' ' + (j ? '回應不完整' : 'HTTP ' + res.status));
+            lastBad = { res: res, txt: txt, j: j, n: n, notes: notes };
+          });
+        }).catch(function (e) {
+          if (settled) return;
+          notes.push('#' + n + (useGet ? 'GET' : '') + ' ' + (e.name === 'AbortError' ? '逾時' : (e.message || e)));
+          if (!lastBad || lastBad.txt === undefined) lastBad = e;
+        }).then(function () {
+          clearTimeout(to); running--;
+          if (settled) return;
+          if (started < tries) start();                          /* 失敗就馬上補送，不用等避險計時 */
+          else if (running === 0) finish(reject, lastBad);
+        });
+      }
+      start();
     });
-    var data = await res.json();
-    if (!data.ok) { var e = new Error(data.error); e.code = data.error; throw e; }
-    return data;
+  }
+
+  /* LINE 憑證約 1 小時過期：過期就登出再登入換新的，最多 2 次，避免無限重新整理 */
+  function tokenExpired() {
+    try { var d = liff.getDecodedIDToken(); return !d || !d.exp || d.exp * 1000 < Date.now() + 60000; }
+    catch (_) { return true; }
+  }
+  function relogin() {
+    var n = 0;
+    try { n = Number(sessionStorage.getItem(RELOGIN_KEY) || 0); sessionStorage.setItem(RELOGIN_KEY, n + 1); } catch (_) {}
+    if (n >= 2) { try { sessionStorage.removeItem(RELOGIN_KEY); } catch (_) {} return false; }
+    queueLog({ what: '重新登入', result: 'LINE 憑證過期，第 ' + (n + 1) + ' 次', ms: 0, detail: '' });
+    liff.logout();
+    if (liff.isInClient()) location.reload(); else liff.login({ redirectUri: location.href });
+    return true;
+  }
+  function apiErr(code, detail) { var e = new Error(code); e.code = code; e.detail = detail || ''; return e; }
+
+  /* 回傳 {j, probed}；寫入（write 函式）由各頁自己決定怎麼補救 */
+  async function callRaw(body, tries) {
+    var r, tA = performance.now();
+    try { r = await gasFetch(body, tries, 45000); }
+    catch (bad) {
+      if (bad && bad.txt !== undefined) r = bad;
+      else {
+        queueLog({ what: '請求', result: '連線失敗或逾時', ms: Math.round(performance.now() - tA), detail: String(bad && (bad.message || bad)) });
+        throw apiErr('server');
+      }
+    }
+    if (r.n > 1) queueLog({ what: '請求', result: '第 ' + r.n + ' 次才成功', ms: Math.round(performance.now() - tA), detail: r.notes.join('；') });
+    var j = r.j;
+    if (!j || isStub(j)) {
+      var t = ((r.txt || '').match(/<title>([^<]*)<\/title>/i) || [])[1] || '';
+      queueLog({ what: '請求', result: j ? '回應不完整' : '非 JSON HTTP ' + (r.res && r.res.status), ms: Math.round(performance.now() - tA), detail: t.trim() });
+      throw apiErr('server', t.trim());
+    }
+    if (!j.ok) { var e = apiErr(j.error); e.data = j; throw e; }
+    try { sessionStorage.removeItem(RELOGIN_KEY); } catch (_) {}
+    return { j: j, r: r };
+  }
+
+  /* 報名（會寫入）不能盲目重送：12 秒沒回應或連線中斷，就查「我的狀態」確認是否已經報名成功 */
+  function writeJoin(body) {
+    return new Promise(function (resolve, reject) {
+      var settled = false, probing = false, origDone = false, origErr = null, timer = null;
+      function finish(fn, v) { if (settled) return; settled = true; clearTimeout(timer); fn(v); }
+      async function probe() {
+        if (probing || settled) return; probing = true;
+        for (var i = 0; i < 3 && !settled; i++) {
+          try {
+            var p = await gasFetch(JSON.stringify({ action: 'me', idToken: liff.getIDToken() }), 2, 20000);
+            if (settled) return;
+            if (p.j && p.j.ok && p.j.status && p.j.status !== 'unregistered') {
+              queueLog({ what: 'join', result: '回應遺失，查詢確認已成立', ms: 0, detail: '第 ' + (i + 1) + ' 次查詢' });
+              return finish(resolve, { j: p.j });
+            }
+          } catch (_) {}
+          if (origDone && i >= 1) break;
+          await new Promise(function (r) { setTimeout(r, 4000); });
+        }
+        if (origDone) finish(reject, origErr || apiErr('server'));
+      }
+      callRaw(body, 1).then(function (v) { finish(resolve, v); }).catch(function (e) {
+        origDone = true; origErr = e;
+        if (e && e.code && e.code !== 'server') return finish(reject, e);   /* 後端有明確回答（邀請碼錯等） */
+        if (!probing) { clearTimeout(timer); probe(); }
+      });
+      timer = setTimeout(probe, 12000);
+    });
+  }
+
+  async function api(action, extra, write) {
+    if (tokenExpired()) { throw relogin() ? apiErr('auth') : apiErr('relogin_fail'); }
+    var body = JSON.stringify(Object.assign({ action: action, idToken: liff.getIDToken() }, extra || {}));
+    var v = write ? await writeJoin(body) : await callRaw(body, 3);
+    return v.j;
+  }
+
+  /* 上次的畫面先顯示（24 小時內），再背景更新；只存已報名的狀態 */
+  var VIEW_KEY = 'tm_view', reqSeq = 0, appliedSeq = 0;
+  function saveView(r) { try { if (r && r.status && r.status !== 'unregistered') localStorage.setItem(VIEW_KEY, JSON.stringify({ t: Date.now(), r: r })); else localStorage.removeItem(VIEW_KEY); } catch (_) {} }
+  function loadView() {
+    try { var c = JSON.parse(localStorage.getItem(VIEW_KEY) || 'null'); return c && Date.now() - c.t < 86400000 ? c.r : null; } catch (_) { return null; }
   }
 
   function show(nodes) {
@@ -185,7 +327,8 @@
       var code = input.value.trim();
       if (!code) { msg.textContent = '請輸入邀請碼。'; return; }
       btn.disabled = true; msg.textContent = '';
-      api('join', { code: code }).then(render).catch(function (e) {
+      var seq = ++reqSeq;
+      api('join', { code: code }, true).then(function (r) { appliedSeq = Math.max(appliedSeq, seq); render(r); }).catch(function (e) {
         msg.textContent = errText(e); btn.disabled = false;
       });
     } }, [h('label', { for: 'code', text: '邀請碼' }), input, btn, msg]);
@@ -199,7 +342,7 @@
   }
 
   function render(r) {
-    current = r;
+    current = r; saveView(r);
     var nodes = r.status === 'grouped' ? renderGrouped(r)
               : r.status === 'waiting' ? renderWaiting(r)
               : renderJoin(r);
@@ -212,22 +355,23 @@
       h('p', { class: 'label', text: '發生問題' }),
       h('p', { text: errText(e) }),
       h('button', { type: 'button', text: e && e.code === 'auth' ? '重新登入' : '重試', onclick: function () {
-        if (e && e.code === 'auth') relogin(); else refresh(false);
+        if (e && e.code === 'auth') { if (!relogin()) renderError(apiErr('relogin_fail')); } else refresh(false);
       } })
     ])];
     show(nodes);
   }
 
-  function relogin() {
-    if (liff.isInClient()) { location.reload(); return; }
-    liff.logout();
-    liff.login({ redirectUri: location.href });
-  }
-
   async function refresh(silent) {
     if (loading) return;
     loading = true;
-    try { render(await api('me')); }
+    var seq = ++reqSeq;
+    try {
+      var r = await api('me');
+      if (seq < appliedSeq) return;                 /* 晚回來的舊回應不能蓋掉新結果 */
+      appliedSeq = seq; render(r);
+      var ms = Math.round(performance.now() - T0);
+      if (!silent && ms > 5000) queueLog({ what: '開頁', result: '慢', ms: ms, detail: '' }); else if (!silent) flushLogs();
+    }
     catch (e) { if (!silent) renderError(e); }
     finally { loading = false; }
   }
@@ -247,10 +391,15 @@
     return;
   }
 
+  /* 開頁先「敲門」：喚醒後端、先建好連線；有上次的畫面就先顯示 */
+  try { fetch(GAS_URL, { cache: 'no-store' }).catch(function () {}); } catch (_) {}
+  var cached = loadView();
+  if (cached) { render(cached); stamp.textContent = '顯示上次資料，更新中…'; }
+
   liff.init({ liffId: LIFF_ID }).then(function () {
     if (!liff.isLoggedIn()) { liff.login({ redirectUri: location.href }); return; }
     return refresh(false);
-  }).catch(function () { renderError({ code: 'server' }); });
+  }).catch(function (e) { queueLog({ what: '開頁', result: 'LIFF 初始化失敗', ms: Math.round(performance.now() - T0), detail: String(e && (e.message || e)) }); renderError({ code: 'server' }); });
 })();
 </script>
 </body>
