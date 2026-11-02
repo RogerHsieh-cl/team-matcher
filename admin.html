@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>組隊後台</title>
+<style>
+  :root {
+    --bg: #f4f7f5; --card: #ffffff; --ink: #13201a; --muted: #55655b; --line: #d8e0db;
+    --accent: #0a8a3d; --accent-ink: #ffffff; --soft: #e2f4e8;
+    --bad: #b42318; --bad-soft: #fdeceb; --warn: #8f5200; --warn-soft: #fbeed6; --chip: #e8eeea;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e1511; --card: #151e19; --ink: #e6eee9; --muted: #9fb0a6; --line: #26332c;
+      --accent: #35d072; --accent-ink: #06210f; --soft: #163223;
+      --bad: #ff9a8a; --bad-soft: #3a1b18; --warn: #f0b058; --warn-soft: #30250e; --chip: #1e2a24;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.6 system-ui, -apple-system, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+    padding: max(20px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+             max(32px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  }
+  main { max-width: 760px; margin: 0 auto; display: grid; gap: 20px; }
+  h1 { margin: 0; font-size: 1.25rem; }
+  h2 { margin: 0; font-size: 1rem; }
+  p { margin: 0; }
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px; display: grid; gap: 12px; min-width: 0; }
+  .muted { color: var(--muted); }
+  .small { font-size: .8125rem; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; }
+  .stat { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+  .stat b { display: block; font-size: 1.5rem; line-height: 1.2; font-variant-numeric: tabular-nums; }
+  .pill { display: inline-block; font-size: .75rem; font-weight: 700; padding: 2px 10px; border-radius: 999px; background: var(--soft); color: var(--accent); }
+  .pill.warn { background: var(--warn-soft); color: var(--warn); }
+  .rows { display: grid; gap: 8px; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; min-width: 0; }
+  .row .names { overflow-wrap: anywhere; min-width: 0; flex: 1 1 12rem; }
+  .scroll { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: .875rem; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  th { color: var(--muted); font-size: .8125rem; white-space: nowrap; background: var(--chip); }
+  td.name { overflow-wrap: anywhere; min-width: 7rem; }
+  button, select, input {
+    font: inherit; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--ink); padding: 7px 12px;
+  }
+  button { cursor: pointer; font-weight: 600; }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+  button.danger { background: var(--bad); color: #fff; border-color: transparent; }
+  button.outline-danger { color: var(--bad); border-color: var(--bad); background: transparent; }
+  button:disabled, select:disabled { opacity: .55; cursor: default; }
+  :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .danger-zone { border-color: var(--bad); }
+  .danger-zone h2 { color: var(--bad); }
+  .action { display: grid; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
+  .action:first-of-type { border-top: 0; padding-top: 0; }
+  .confirm { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; background: var(--bad-soft); padding: 10px; border-radius: 8px; }
+  .confirm input { flex: 1 1 8rem; min-width: 0; }
+  .toast { position: sticky; top: max(8px, env(safe-area-inset-top)); z-index: 5; padding: 10px 14px; border-radius: 8px; background: var(--soft); color: var(--accent); font-weight: 600; }
+  .toast.err { background: var(--bad-soft); color: var(--bad); }
+  .ctl { display: flex; gap: 8px; flex-wrap: wrap; }
+  summary { cursor: pointer; color: var(--muted); font-size: .875rem; }
+  details { display: grid; gap: 8px; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--chip); padding: .1em .4em; border-radius: 4px; overflow-wrap: anywhere; }
+</style>
+</head>
+<body>
+<main>
+  <div class="top">
+    <h1>組隊後台</h1>
+    <button id="reload" type="button" hidden>重新整理</button>
+  </div>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <div id="view" aria-live="polite"><section class="card"><p class="muted">載入中…</p></section></div>
+</main>
+
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  /* 這兩個值公開沒關係。誰是管理員由 GAS 的 ADMIN_USER_IDS 決定。 */
+  var LIFF_ID = 'YOUR_LIFF_ID';
+  var GAS_URL = 'https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec';
+
+  var ERR = {
+    forbidden: '你的帳號不是管理員。', confirm: '確認字串不正確。', not_found: '找不到這位成員或組別，可能已被異動，請重新整理。',
+    busy: '系統忙碌中，請再按一次。', auth: '登入已逾時，請重新登入。', config: '系統尚未設定完成。',
+    bad_request: '不支援的操作。', server: '發生錯誤，請稍後再試。'
+  };
+  var PHASE = { early: '截止前', late: '截止後', ended: '報名已關閉' };
+
+  var view = document.getElementById('view');
+  var toastEl = document.getElementById('toast');
+  var reloadBtn = document.getElementById('reload');
+  var state = null;
+  var busy = false;
+  var armed = null;    /* 目前展開的確認區：'remove:<userId>' | 'regroup' | 'reset' | 'flags' */
+  var armTimer = null;
+
+  function h(tag, props, kids) {
+    var el = document.createElement(tag);
+    Object.keys(props || {}).forEach(function (k) {
+      if (k === 'text') el.textContent = props[k];
+      else if (k.slice(0, 2) === 'on') el.addEventListener(k.slice(2), props[k]);
+      else if (k === 'disabled' || k === 'selected') { if (props[k]) el.setAttribute(k, ''); }
+      else el.setAttribute(k, props[k]);
+    });
+    (kids || []).forEach(function (c) { if (c) el.appendChild(c); });
+    return el;
+  }
+
+  function fmt(iso) {
+    try {
+      return new Date(iso).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', month: 'numeric', day: 'numeric',
+        weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
+    } catch (e) { return iso; }
+  }
+
+  var toastTimer = null;
+  function toast(msg, isErr) {
+    toastEl.textContent = msg;
+    toastEl.className = 'toast' + (isErr ? ' err' : '');
+    toastEl.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { toastEl.hidden = true; }, 4000);
+  }
+
+  async function api(action, extra) {
+    var res = await fetch(GAS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(Object.assign({ action: action, idToken: liff.getIDToken() }, extra || {}))
+    });
+    var data = await res.json();
+    if (!data.ok) { var e = new Error(data.error); e.code = data.error; e.data = data; throw e; }
+    return data;
+  }
+
+  /* 所有會改資料的操作都從這裡走：避免連點，成功後直接用回傳的新狀態重畫 */
+  async function run(action, extra, okMsg) {
+    if (busy) return;
+    busy = true; armed = null; render();
+    try {
+      state = await api(action, extra);
+      toast(okMsg);
+    } catch (e) {
+      toast(ERR[e.code] || ERR.server, true);
+      if (e.code === 'not_found') { try { state = await api('admin_state'); } catch (x) {} }
+    } finally { busy = false; render(); }
+  }
+
+  function arm(key) {
+    armed = key; render();
+    clearTimeout(armTimer);
+    armTimer = setTimeout(function () { if (armed === key) { armed = null; render(); } }, 8000);
+  }
+
+  function stat(label, value) {
+    return h('div', { class: 'stat' }, [h('b', { text: String(value) }), h('span', { class: 'muted small', text: label })]);
+  }
+
+  function overview(s) {
+    var phase = s.info.phase;
+    return h('section', { class: 'card' }, [
+      h('div', { class: 'top' }, [
+        h('h2', { text: '總覽' }),
+        h('span', { class: 'pill' + (phase === 'ended' ? ' warn' : ''), text: PHASE[phase] || phase })
+      ]),
+      h('div', { class: 'stats' }, [
+        stat('已報名（上限 ' + s.maxParticipants + '）', s.counts.members),
+        stat('已分組', s.counts.grouped),
+        stat('等待中', s.counts.waiting),
+        stat('組別數', s.counts.groups)
+      ]),
+      h('p', { class: 'small muted', text: '截止 ' + fmt(s.info.deadline) + (s.flags.deadline ? '（已 flush）' : '（未 flush）') +
+        '　關閉 ' + fmt(s.info.closeAt) + (s.flags.close ? '（已 flush）' : '（未 flush）') }),
+      h('p', { class: 'small muted', text: '要改日期或人數上限，請直接編輯 Sheet 的 config 分頁。' })
+    ]);
+  }
+
+  function groupsCard(s) {
+    var rows = s.groups.map(function (g) {
+      var badge = g.warn ? h('span', { class: 'pill warn', text: g.warn === 'small' ? '人數不足' : '超過上限' }) : null;
+      return h('div', { class: 'row' }, [
+        h('strong', { text: g.id }),
+        h('span', { class: 'names', text: g.names.join('、') }),
+        h('span', { class: 'small muted', text: g.size + ' 人' }),
+        badge
+      ]);
+    });
+    return h('section', { class: 'card' }, [
+      h('h2', { text: '組別（' + s.groups.length + '）' }),
+      rows.length ? h('div', { class: 'rows' }, rows) : h('p', { class: 'muted', text: '還沒有任何組別。' })
+    ]);
+  }
+
+  function membersCard(s) {
+    var groupIds = s.groups.map(function (g) { return g.id; });
+    var items = s.members.map(function (m) {
+      var sel = h('select', { 'aria-label': m.name + ' 的組別', disabled: busy, onchange: function (ev) {
+        run('admin_move', { userId: m.userId, groupId: ev.target.value }, '已移動 ' + m.name);
+      } }, [h('option', { value: '', text: '等待區', selected: !m.groupId })].concat(
+        groupIds.map(function (id) { return h('option', { value: id, text: id, selected: m.groupId === id }); })
+      ));
+      var key = 'remove:' + m.userId;
+      var del = armed === key
+        ? h('button', { class: 'danger', type: 'button', disabled: busy, text: '確定移除', onclick: function () {
+            run('admin_remove', { userId: m.userId }, '已移除 ' + m.name);
+          } })
+        : h('button', { class: 'outline-danger', type: 'button', disabled: busy, text: '移除', onclick: function () { arm(key); } });
+      return h('div', { class: 'row' }, [
+        h('div', { class: 'names' }, [
+          h('div', { text: m.name }),
+          h('div', { class: 'small muted mono', text: '…' + m.userId.slice(-6) + '　' + m.joinedAt })
+        ]),
+        h('div', { class: 'ctl' }, [sel, del])
+      ]);
+    });
+    var list = h('div', { class: 'rows' }, items);
+    return h('section', { class: 'card' }, [
+      h('h2', { text: '成員（' + s.members.length + '）' }),
+      s.members.length ? list : h('p', { class: 'muted', text: '還沒有人報名。' }),
+      h('p', { class: 'small muted', text: '移動或移除後，空的組別會自動刪除。組別出現「人數不足」時，可以再移動成員，或使用下方的重新分組。' })
+    ]);
+  }
+
+  /* 兩段式確認。viewer 不一定允許 confirm()，所以確認區做在頁面裡。 */
+  function dangerAction(o) {
+    var box;
+    if (armed === o.key) {
+      var input = o.typed ? h('input', { type: 'text', placeholder: '輸入「' + o.typed + '」', 'aria-label': '確認字串', autocomplete: 'off' }) : null;
+      var go = h('button', { class: 'danger', type: 'button', text: o.go, onclick: function () {
+        if (o.typed && input.value.trim() !== o.typed) { toast('請輸入「' + o.typed + '」才能執行。', true); return; }
+        run(o.action, o.extra, o.done);
+      } });
+      var cancel = h('button', { type: 'button', text: '取消', onclick: function () { armed = null; render(); } });
+      box = h('div', { class: 'confirm' }, [input, go, cancel]);
+    } else {
+      box = h('div', {}, [h('button', { class: 'outline-danger', type: 'button', disabled: busy, text: o.label, onclick: function () { arm(o.key); } })]);
+    }
+    return h('div', { class: 'action' }, [h('strong', { text: o.label }), h('p', { class: 'small muted', text: o.desc }), box]);
+  }
+
+  function dangerCard() {
+    return h('section', { class: 'card danger-zone' }, [
+      h('h2', { text: '危險操作' }),
+      dangerAction({ key: 'regroup', label: '重新分組', action: 'admin_regroup', go: '確定重新分組', done: '已重新分組',
+        desc: '清掉所有組別，成員名單不變，依目前階段重新隨機分一次。組別編號會從 G01 重來。' }),
+      dangerAction({ key: 'reset', label: '清空全部（Reset）', action: 'admin_reset', extra: { confirm: 'RESET' }, typed: '重置',
+        go: '確定清空', done: '已清空所有報名與組別',
+        desc: '刪除所有成員與組別，並重設 flush 旗標。config 與邀請碼不受影響。無法復原，建議先備份 Sheet。' }),
+      dangerAction({ key: 'flags', label: '重設 flush 旗標', action: 'admin_reset_flags', go: '確定重設', done: '已重設旗標',
+        desc: '改了 deadline 或 closeAt 之後使用，讓截止與關閉的 flush 可以再跑一次。不會動到成員與組別。' })
+    ]);
+  }
+
+  function notAdmin(e) {
+    var id = (e.data && e.data.userId) || '';
+    return [h('section', { class: 'card' }, [
+      h('h2', { text: '沒有權限' }),
+      h('p', { class: 'muted', text: '這個頁面只提供管理員使用。' }),
+      h('details', {}, [
+        h('summary', { text: '我是管理員，需要設定權限' }),
+        h('p', { text: '把下面這串 userId 加到 Apps Script「專案設定」→「指令碼屬性」的 ADMIN_USER_IDS，多人用逗號分隔，存檔後按「重新整理」。' }),
+        h('p', {}, [h('code', { text: id })])
+      ])
+    ])];
+  }
+
+  function render() {
+    if (!state) return;
+    view.textContent = '';
+    [overview(state), groupsCard(state), membersCard(state), dangerCard()].forEach(function (n) { view.appendChild(n); });
+    reloadBtn.hidden = false;
+  }
+
+  function fail(e) {
+    reloadBtn.hidden = false;
+    view.textContent = '';
+    if (e && e.code === 'forbidden') { notAdmin(e).forEach(function (n) { view.appendChild(n); }); return; }
+    var again = h('button', { class: 'primary', type: 'button', text: e && e.code === 'auth' ? '重新登入' : '重試', onclick: function () {
+      if (e && e.code === 'auth') { liff.logout(); liff.login({ redirectUri: location.href }); } else load();
+    } });
+    view.appendChild(h('section', { class: 'card' }, [h('p', { text: ERR[e && e.code] || ERR.server }), again]));
+  }
+
+  async function load() {
+    try { state = await api('admin_state'); render(); } catch (e) { fail(e); }
+  }
+
+  reloadBtn.addEventListener('click', function () { if (!busy) { armed = null; load(); } });
+
+  if (LIFF_ID.indexOf('YOUR_') === 0 || GAS_URL.indexOf('YOUR_') !== -1) {
+    view.textContent = '';
+    view.appendChild(h('section', { class: 'card' }, [h('p', { text: '請在 admin.html 填入 LIFF_ID 與 GAS_URL。' })]));
+    return;
+  }
+
+  liff.init({ liffId: LIFF_ID }).then(function () {
+    if (!liff.isLoggedIn()) { liff.login({ redirectUri: location.href }); return; }
+    return load();
+  }).catch(function () { fail({ code: 'server' }); });
+})();
+</script>
+</body>
+</html>
