@@ -460,13 +460,17 @@
     var seq = ++reqSeq;
     try {
       var tA = performance.now();
+      var first = !firstDone;                       /* 只有開頁那一次要算 LINE 初始化；之後手動重新整理從按下去才開始算 */
       var r = await api('me');
       var tApi = performance.now() - tA;
+      firstDone = true;
       if (seq < appliedSeq) return;                 /* 晚回來的舊回應不能蓋掉新結果 */
       appliedSeq = seq; render(r);
-      var ms = Math.round(performance.now() - T0);
-      if (!silent) stamp.textContent += '　共 ' + (ms / 1000).toFixed(1) + ' 秒（LINE ' + (tLiff / 1000).toFixed(1) + '、等回應 ' + (tApi / 1000).toFixed(1) + (r._perf && r._perf.total != null ? '，後端 ' + (r._perf.total / 1000).toFixed(1) : '') + '）';
-      if (!silent && ms > 3000) queueLog({ what: '開頁', result: '慢', ms: ms, detail: 'LINE ' + (tLiff / 1000).toFixed(1) + 's 等回應 ' + (tApi / 1000).toFixed(1) + 's 後端 ' + JSON.stringify(r._perf || {}) + (cached ? ' 有舊畫面' : ' 無舊畫面') });
+      var ms = Math.round(performance.now() - (first ? T0 : tA));
+      var pf = r._perf || {}, sec = function (v) { return (v / 1000).toFixed(1); };
+      if (!silent) stamp.textContent += '　' + (first ? '開頁共 ' : '本次共 ') + sec(ms) + ' 秒（' + (first ? 'LINE ' + sec(tLiff) + '、' : '') + '等回應 ' + sec(tApi) +
+        (pf.total != null ? '；後端 ' + sec(pf.total) + '＝驗證 ' + sec(pf.verify || 0) + '＋設定 ' + sec(pf.cfg || 0) + '＋檢查 ' + sec(pf.tick || 0) + '＋動作 ' + sec(pf.act || 0) : '') + '）';
+      if (!silent && first && ms > 3000) queueLog({ what: '開頁', result: '慢', ms: ms, detail: 'LINE ' + (tLiff / 1000).toFixed(1) + 's 等回應 ' + (tApi / 1000).toFixed(1) + 's 後端 ' + JSON.stringify(r._perf || {}) + (cached ? ' 有舊畫面' : ' 無舊畫面') });
       if (!silent) flushLogs();
     }
     catch (e) { if (!silent) renderError(e); }
@@ -490,7 +494,7 @@
 
   /* 開頁先「敲門」：喚醒後端、先建好連線；有上次的畫面就先顯示 */
   try { fetch(GAS_URL, { cache: 'no-store' }).catch(function () {}); } catch (_) {}
-  var tLiff = 0;
+  var tLiff = 0, firstDone = false;
   var cached = loadView();
   if (cached) { render(cached); stamp.textContent = '顯示上次資料，更新中…'; }
 
