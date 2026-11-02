@@ -26,6 +26,7 @@
   main { max-width: 480px; margin: 0 auto; display: grid; gap: 16px; }
   h1 { margin: 0; font-size: 1.25rem; letter-spacing: .02em; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px; display: grid; gap: 12px; }
+  .questions { white-space: pre-line; overflow-wrap: anywhere; }
   .label { margin: 0; font-size: .8125rem; color: var(--muted); letter-spacing: .06em; }
   .big { margin: 0; font-size: 2rem; font-weight: 700; line-height: 1.2; }
   .hint { margin: 0; font-size: .875rem; color: var(--muted); }
@@ -280,7 +281,9 @@
       h('p', { class: 'label', text: '本次課程' }),
       info.classTitle ? h('p', { class: 'big', text: info.classTitle }) : null,
       info.classDate ? h('p', { text: '上課時間：' + fmt(info.classDate) }) : null,
-      info.classNote ? h('p', { class: 'hint', text: info.classNote }) : null
+      info.classNote ? h('p', { class: 'hint', text: info.classNote }) : null,
+      info.classQuestions ? h('p', { class: 'label', text: '討論問題' }) : null,
+      info.classQuestions ? h('p', { class: 'questions', text: info.classQuestions }) : null
     ]);
   }
 

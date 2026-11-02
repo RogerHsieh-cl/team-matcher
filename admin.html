@@ -70,7 +70,7 @@
   .form h3 { margin: 6px 0 0; font-size: .875rem; color: var(--muted); }
   .field { display: grid; gap: 4px; }
   .field label { font-size: .875rem; font-weight: 600; }
-  .field input, .field select { width: 100%; min-width: 0; }
+  .field input, .field select, .field textarea { width: 100%; min-width: 0; font: inherit; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--ink); padding: 8px 12px; resize: vertical; }
   summary { cursor: pointer; color: var(--muted); font-size: .875rem; }
   details { display: grid; gap: 8px; }
   code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--chip); padding: .1em .4em; border-radius: 4px; overflow-wrap: anywhere; }
@@ -302,15 +302,18 @@
 
   /* 設定：課程題目與日期、截止與關閉、人數。輸入中的內容存在 draft，重畫畫面時不會被洗掉 */
   var FIELD = { classTitle: '課程題目', classDate: '上課日期', classNote: '地點或備註', deadline: '截止時間', closeAt: '關閉時間',
-                groupMin: '每組最少人數', groupMax: '每組最多人數', batchThreshold: '批次分組門檻', maxParticipants: '報名人數上限', finalOverflow: '關閉時落單者併入已滿組別' };
+                classQuestions: '討論問題', groupMin: '每組最少人數', groupMax: '每組最多人數', batchThreshold: '批次分組門檻', maxParticipants: '報名人數上限', finalOverflow: '關閉時落單者併入已滿組別' };
   var draft = null;
   function dt(v) { return String(v || '').replace(' ', 'T'); }          /* yyyy-MM-dd HH:mm → datetime-local */
   function field(key, kind, hint, attrs) {
     var v = draft[key];
-    var input = kind === 'select'
+    var input = kind === 'textarea'
+      ? h('textarea', Object.assign({ id: 'f-' + key, rows: '6' }, attrs || {}))
+      : kind === 'select'
       ? h('select', { id: 'f-' + key }, [h('option', { value: 'true', text: '是（可到 4 人）' }), h('option', { value: 'false', text: '否（維持落單）' })])
       : h('input', Object.assign({ id: 'f-' + key, type: kind, value: kind === 'datetime-local' ? dt(v) : String(v) }, attrs || {}));
     if (kind === 'select') input.value = String(v);
+    if (kind === 'textarea') input.value = String(v);
     input.addEventListener('input', function () { draft[key] = kind === 'select' ? input.value === 'true' : input.value; });
     return h('div', { class: 'field' }, [h('label', { for: 'f-' + key, text: FIELD[key] }), input, hint ? h('span', { class: 'small muted', text: hint }) : null]);
   }
@@ -327,6 +330,7 @@
       field('classTitle', 'text', '顯示在學員頁面最上方，最多 60 字', { maxlength: '60', placeholder: '例如：合一' }),
       field('classDate', 'datetime-local', '可留白'),
       field('classNote', 'text', '地點或備註，最多 200 字', { maxlength: '200', placeholder: '例如：二樓長老定額組教室' }),
+      field('classQuestions', 'textarea', '一格就好，可以換行（Enter），最多 1000 字。學員頁面會照換行顯示', { maxlength: '1000', placeholder: '1. 什麼是以基督為中心的合一？\n2. 我可以為所屬的小組做什麼？' }),
       h('h3', { text: '時程' }),
       field('deadline', 'datetime-local', '截止：等待中的人全部分完'),
       field('closeAt', 'datetime-local', '關閉報名並做最後一次處理，設在開課前，必須晚於截止'),
