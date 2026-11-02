@@ -468,7 +468,7 @@
       appliedSeq = seq; render(r);
       var ms = Math.round(performance.now() - (first ? T0 : tA));
       var pf = r._perf || {}, sec = function (v) { return (v / 1000).toFixed(1); };
-      if (!silent) stamp.textContent += '　' + (first ? '開頁共 ' : '本次共 ') + sec(ms) + ' 秒（' + (first ? 'LINE ' + sec(tLiff) + '、' : '') + '等回應 ' + sec(tApi) +
+      if (!silent && DEBUG) stamp.textContent += '　' + (first ? '開頁共 ' : '本次共 ') + sec(ms) + ' 秒（' + (first ? 'LINE ' + sec(tLiff) + '、' : '') + '等回應 ' + sec(tApi) +
         (pf.total != null ? '；後端 ' + sec(pf.total) + '＝驗證 ' + sec(pf.verify || 0) + '＋設定 ' + sec(pf.cfg || 0) + '＋檢查 ' + sec(pf.tick || 0) + '＋動作 ' + sec(pf.act || 0) : '') + '）';
       if (!silent && first && ms > 3000) queueLog({ what: '開頁', result: '慢', ms: ms, detail: 'LINE ' + (tLiff / 1000).toFixed(1) + 's 等回應 ' + (tApi / 1000).toFixed(1) + 's 後端 ' + JSON.stringify(r._perf || {}) + (cached ? ' 有舊畫面' : ' 無舊畫面') });
       if (!silent) flushLogs();
@@ -495,6 +495,9 @@
   /* 開頁先「敲門」：喚醒後端、先建好連線；有上次的畫面就先顯示 */
   try { fetch(GAS_URL, { cache: 'no-store' }).catch(function () {}); } catch (_) {}
   var tLiff = 0, firstDone = false;
+  /* 耗時分段只在除錯時顯示：網址加 ?debug=1，或在瀏覽器存 localStorage.tm_debug = '1' */
+  var DEBUG = false;
+  try { DEBUG = /[?&]debug=1/.test(location.search) || localStorage.getItem('tm_debug') === '1'; } catch (_) {}
   var cached = loadView();
   if (cached) { render(cached); stamp.textContent = '顯示上次資料，更新中…'; }
 
