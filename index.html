@@ -138,9 +138,23 @@
 
   function isStub(j) { return !!(j && j.ok && j.service && !j.status && !j.counts); }   /* doGet 的版本資訊，不是資料 */
 
+  var FE_VER = '2026-11-02-diag';
+  /* 回報用的環境資訊：前端版本、LINE 版本、系統、是否在 LINE 內、網路品質、螢幕（不含任何個資） */
+  function deviceInfo() {
+    var d = ['FE ' + FE_VER];
+    try {
+      var ua = navigator.userAgent || '', m;
+      d.push((m = ua.match(/Line\/([\d.]+)/)) ? 'LINE ' + m[1] : 'non-LINE');
+      d.push((m = ua.match(/Android ([\d.]+)/)) ? 'Android ' + m[1] : (m = ua.match(/OS ([\d_]+) like Mac/)) ? 'iOS ' + m[1].replace(/_/g, '.') : 'OS?');
+    } catch (_) {}
+    try { d.push(liff.isInClient() ? 'inClient' : 'external'); d.push('liff ' + liff.getVersion()); d.push(liff.getLanguage()); } catch (_) {}
+    try { var c = navigator.connection; if (c) d.push('net ' + (c.effectiveType || '?') + ' rtt' + (c.rtt || '?') + ' dl' + (c.downlink || '?')); } catch (_) {}
+    try { d.push(screen.width + 'x' + screen.height); } catch (_) {}
+    return d.join(' | ').slice(0, 200);
+  }
   function queueLog(l) {
     l.id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-    l.device = (navigator.userAgent || '').slice(0, 120);
+    l.device = deviceInfo();
     try {
       var q = JSON.parse(localStorage.getItem(LOG_KEY) || '[]'); q.push(l);
       localStorage.setItem(LOG_KEY, JSON.stringify(q.slice(-10)));
@@ -156,6 +170,17 @@
         .catch(function () {});
     } catch (_) {}
   }
+
+  /* 沒接住的 JS 錯誤也回報（最多留 10 筆、後端每小時最多收 300 筆） */
+  window.addEventListener('error', function (e) {
+    queueLog({ what: '頁面錯誤', result: 'JS error', ms: 0, detail: String(e.message || '') + ' @' + String(e.filename || '').split('/').pop() + ':' + (e.lineno || 0) });
+    flushLogs();
+  });
+  window.addEventListener('unhandledrejection', function (e) {
+    var r = e && e.reason;
+    queueLog({ what: '頁面錯誤', result: 'unhandled', ms: 0, detail: String(r && (r.message || r.code || r)).slice(0, 200) });
+    flushLogs();
+  });
 
   /* 讀取用「避險請求」：HEDGE_MS 沒回就再送一次（最多 tries 次），誰先回來用誰；
      收到版本資訊（POST 被轉成 GET）時，下一次改用 GET ?q= 帶資料。 */
@@ -418,6 +443,7 @@
   }
 
   function renderError(e) {
+    try { queueLog({ what: '畫面錯誤', result: String((e && e.code) || 'unknown'), ms: Math.round(performance.now() - T0), detail: String((e && e.detail) || (e && e.message) || '') }); flushLogs(); } catch (_) {}
     var nodes = [card([
       h('p', { class: 'label', text: '發生問題' }),
       h('p', { text: errText(e) }),
@@ -440,7 +466,8 @@
       appliedSeq = seq; render(r);
       var ms = Math.round(performance.now() - T0);
       if (!silent) stamp.textContent += '　共 ' + (ms / 1000).toFixed(1) + ' 秒（LINE ' + (tLiff / 1000).toFixed(1) + '、等回應 ' + (tApi / 1000).toFixed(1) + (r._perf && r._perf.total != null ? '，後端 ' + (r._perf.total / 1000).toFixed(1) : '') + '）';
-      if (!silent && ms > 5000) queueLog({ what: '開頁', result: '慢', ms: ms, detail: '' }); else if (!silent) flushLogs();
+      if (!silent && ms > 3000) queueLog({ what: '開頁', result: '慢', ms: ms, detail: 'LINE ' + (tLiff / 1000).toFixed(1) + 's 等回應 ' + (tApi / 1000).toFixed(1) + 's 後端 ' + JSON.stringify(r._perf || {}) + (cached ? ' 有舊畫面' : ' 無舊畫面') });
+      if (!silent) flushLogs();
     }
     catch (e) { if (!silent) renderError(e); }
     finally { loading = false; }

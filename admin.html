@@ -33,6 +33,14 @@
   .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px; display: grid; gap: 12px; min-width: 0; }
   .muted { color: var(--muted); }
+  .btnrow { display: flex; gap: 8px; flex-wrap: wrap; }
+  ul.diag { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  ul.diag li { display: grid; grid-template-columns: 3.2rem 1fr; gap: 8px; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: .875rem; overflow-wrap: anywhere; }
+  ul.diag li b { font-size: .75rem; align-self: start; padding-top: 2px; }
+  ul.diag li.lv-ok b { color: var(--accent); }
+  ul.diag li.lv-warn { border-color: #b7791f; } ul.diag li.lv-warn b { color: #b7791f; }
+  ul.diag li.lv-fail { border-color: var(--bad); } ul.diag li.lv-fail b { color: var(--bad); }
+  .pre { white-space: pre-line; }
   .small { font-size: .8125rem; }
   .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
   .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; }
@@ -416,6 +424,50 @@
     return h('div', { class: 'action' }, [h('strong', { text: o.label }), h('p', { class: 'small muted', text: o.desc }), box]);
   }
 
+  /* 診斷：一次檢查後端設定、旗標、觸發器、資料一致性、速度與近 24 小時紀錄；可複製成純文字貼給別人看 */
+  var diag = null, diagBusy = false, diagErr = '';
+  function copyText(t) {
+    function fallback() {
+      var ta = document.createElement('textarea'); ta.value = t; ta.style.cssText = 'position:fixed;opacity:0;top:0;left:0';
+      document.body.appendChild(ta); ta.select(); var ok = false;
+      try { ok = document.execCommand('copy'); } catch (_) {}
+      document.body.removeChild(ta); return ok;
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(t).then(function () { return true; }, function () { return fallback(); });
+    return Promise.resolve(fallback());
+  }
+  function runDiag() {
+    if (diagBusy) return;
+    diagBusy = true; diagErr = ''; render();
+    api('admin_diagnose').then(function (j) { diag = j; }).catch(function (e) {
+      diagErr = (ERR[e && e.code] || ERR.server) + (e && e.detail ? '（' + e.detail + '）' : '');
+    }).then(function () { diagBusy = false; render(); });
+  }
+  function diagCard() {
+    var LV = { ok: '正常', warn: '注意', fail: '異常' };
+    var kids = [
+      h('h2', { text: '診斷' }),
+      h('p', { class: 'muted small', text: '一次檢查：版本、時區、指令碼屬性、設定、flush 旗標、觸發器、資料一致性、連線速度、近 24 小時紀錄。出問題時按這個，再按「複製診斷包」貼給我。' }),
+      h('div', { class: 'btnrow' }, [
+        h('button', { class: 'primary', type: 'button', disabled: diagBusy ? 'disabled' : null, text: diagBusy ? '檢查中…' : diag ? '重新診斷' : '執行診斷', onclick: runDiag }),
+        diag ? h('button', { type: 'button', text: '複製診斷包', onclick: function () {
+          copyText(diag.text).then(function (ok) { toast(ok ? '已複製診斷包' : '複製失敗，請手動選取下方文字', !ok); });
+        } }) : null
+      ])
+    ];
+    if (diagErr) kids.push(h('p', { class: 'muted', role: 'alert', text: diagErr }));
+    if (diag) {
+      kids.push(h('p', { class: 'small', text: '正常 ' + diag.summary.ok + '　注意 ' + diag.summary.warn + '　異常 ' + diag.summary.fail }));
+      kids.push(h('ul', { class: 'diag' }, diag.items.map(function (i) {
+        return h('li', { class: 'lv-' + i.level }, [
+          h('b', { text: LV[i.level] || i.level }),
+          h('span', {}, [h('strong', { text: i.label + '：' }), h('span', { class: 'pre', text: i.detail })])
+        ]);
+      })));
+    }
+    return h('section', { class: 'card' }, kids);
+  }
+
   function dangerCard() {
     return h('section', { class: 'card danger-zone' }, [
       h('h2', { text: '危險操作' }),
@@ -445,7 +497,7 @@
   function render() {
     if (!state) return;
     view.textContent = '';
-    [overview(state), settingsCard(state), groupsCard(state), membersCard(state), dangerCard()].forEach(function (n) { view.appendChild(n); });
+    [overview(state), settingsCard(state), groupsCard(state), membersCard(state), diagCard(), dangerCard()].forEach(function (n) { view.appendChild(n); });
     reloadBtn.hidden = false;
   }
 
