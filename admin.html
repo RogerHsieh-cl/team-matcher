@@ -301,7 +301,7 @@
   }
 
   /* 設定：課程題目與日期、截止與關閉、人數。輸入中的內容存在 draft，重畫畫面時不會被洗掉 */
-  var FIELD = { classTitle: '課程題目', classDate: '上課日期', classTeacher: '本周教師', classNote: '地點或備註', deadline: '截止時間', closeAt: '關閉時間',
+  var FIELD = { siteTitle: '頁面標題', groupLink: '分組連結', classTitle: '課程題目', classDate: '上課日期', classTeacher: '本周教師', classNote: '地點或備註', deadline: '截止時間', closeAt: '關閉時間',
                 classQuestions: '討論問題', groupMin: '每組最少人數', groupMax: '每組最多人數', batchThreshold: '批次分組門檻', maxParticipants: '報名人數上限', finalOverflow: '關閉時落單者併入已滿組別' };
   var draft = null;
   function dt(v) { return String(v || '').replace(' ', 'T'); }          /* yyyy-MM-dd HH:mm → datetime-local */
@@ -326,6 +326,9 @@
       if (!Object.keys(values).length) { toast('沒有變更。'); return; }
       run('admin_config', { values: values }, '已儲存設定');
     } }, [
+      h('h3', { text: '頁面' }),
+      field('siteTitle', 'text', '學員頁最上方標題，最多 30 字，留白顯示「自動組隊」', { maxlength: '30', placeholder: '自動組隊' }),
+      field('groupLink', 'text', '分組後顯示給學員的連結（LINE 社群、共同文件等），https:// 開頭，可留白', { maxlength: '300', placeholder: 'https://line.me/ti/g2/...' }),
       h('h3', { text: '課程' }),
       field('classTitle', 'text', '顯示在學員頁面最上方，最多 60 字', { maxlength: '60', placeholder: '例如：合一' }),
       field('classDate', 'datetime-local', '可留白'),
