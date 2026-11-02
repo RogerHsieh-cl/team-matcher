@@ -276,11 +276,12 @@
 
   /* 本次課程（題目、日期、備註）：管理員在後台填，沒填就不顯示 */
   function classCard(info) {
-    if (!info || !(info.classTitle || info.classDate || info.classNote)) return null;
+    if (!info || !(info.classTitle || info.classDate || info.classTeacher || info.classNote || info.classQuestions)) return null;
     return card([
       h('p', { class: 'label', text: '本次課程' }),
       info.classTitle ? h('p', { class: 'big', text: info.classTitle }) : null,
       info.classDate ? h('p', { text: '上課時間：' + fmt(info.classDate) }) : null,
+      info.classTeacher ? h('p', { text: '本周教師：' + info.classTeacher }) : null,
       info.classNote ? h('p', { class: 'hint', text: info.classNote }) : null,
       info.classQuestions ? h('p', { class: 'label', text: '討論問題' }) : null,
       info.classQuestions ? h('p', { class: 'questions', text: info.classQuestions }) : null

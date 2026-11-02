@@ -301,7 +301,7 @@
   }
 
   /* 設定：課程題目與日期、截止與關閉、人數。輸入中的內容存在 draft，重畫畫面時不會被洗掉 */
-  var FIELD = { classTitle: '課程題目', classDate: '上課日期', classNote: '地點或備註', deadline: '截止時間', closeAt: '關閉時間',
+  var FIELD = { classTitle: '課程題目', classDate: '上課日期', classTeacher: '本周教師', classNote: '地點或備註', deadline: '截止時間', closeAt: '關閉時間',
                 classQuestions: '討論問題', groupMin: '每組最少人數', groupMax: '每組最多人數', batchThreshold: '批次分組門檻', maxParticipants: '報名人數上限', finalOverflow: '關閉時落單者併入已滿組別' };
   var draft = null;
   function dt(v) { return String(v || '').replace(' ', 'T'); }          /* yyyy-MM-dd HH:mm → datetime-local */
@@ -329,6 +329,7 @@
       h('h3', { text: '課程' }),
       field('classTitle', 'text', '顯示在學員頁面最上方，最多 60 字', { maxlength: '60', placeholder: '例如：合一' }),
       field('classDate', 'datetime-local', '可留白'),
+      field('classTeacher', 'text', '本周教師，最多 60 字', { maxlength: '60', placeholder: '例如：謝弟兄' }),
       field('classNote', 'text', '地點或備註，最多 200 字', { maxlength: '200', placeholder: '例如：二樓長老定額組教室' }),
       field('classQuestions', 'textarea', '一格就好，可以換行（Enter），最多 1000 字。學員頁面會照換行顯示', { maxlength: '1000', placeholder: '1. 什麼是以基督為中心的合一？\n2. 我可以為所屬的小組做什麼？' }),
       h('h3', { text: '時程' }),
