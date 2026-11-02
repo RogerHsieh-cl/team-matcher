@@ -66,6 +66,11 @@
   .toast { position: sticky; top: max(8px, env(safe-area-inset-top)); z-index: 5; padding: 10px 14px; border-radius: 8px; background: var(--soft); color: var(--accent); font-weight: 600; }
   .toast.err { background: var(--bad-soft); color: var(--bad); }
   .ctl { display: flex; gap: 8px; flex-wrap: wrap; }
+  .form { display: grid; gap: 12px; }
+  .form h3 { margin: 6px 0 0; font-size: .875rem; color: var(--muted); }
+  .field { display: grid; gap: 4px; }
+  .field label { font-size: .875rem; font-weight: 600; }
+  .field input, .field select { width: 100%; min-width: 0; }
   summary { cursor: pointer; color: var(--muted); font-size: .875rem; }
   details { display: grid; gap: 8px; }
   code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--chip); padding: .1em .4em; border-radius: 4px; overflow-wrap: anywhere; }
@@ -93,6 +98,7 @@
   var ERR = {
     forbidden: '你的帳號不是管理員。', confirm: '確認字串不正確。', not_found: '找不到這位成員或組別，可能已被異動，請重新整理。',
     busy: '系統忙碌中，請再按一次。', auth: '登入已逾時，請重新登入。',
+    invalid: '欄位格式不正確：',
     relogin_fail: 'LINE 登入狀態一直失效：請關閉這個頁面，再從 LINE 重新開啟。', config: '系統尚未設定完成。',
     bad_request: '不支援的操作。', server: '發生錯誤，請稍後再試。'
   };
@@ -256,9 +262,11 @@
     busy = true; armed = null; render();
     try {
       state = await api(action, extra);
+      if (action === 'admin_config') draft = null;            /* 存成功才丟掉草稿；失敗時保留，使用者不用重填 */
       toast(okMsg);
     } catch (e) {
-      toast(ERR[e.code] || ERR.server, true);
+      toast(e.code === 'invalid' && e.data ? ERR.invalid + (FIELD[e.data.field] || e.data.field) + (e.data.field === 'closeAt' ? '（必須晚於截止時間）' : e.data.field === 'groupMax' ? '（不能小於最少人數）' : '')
+                                           : (ERR[e.code] || ERR.server), true);
       /* 資料已被別人改過，或回應遺失（後端可能其實已經做完）：重新讀一次，以畫面為準，不重送 */
       if (e.code === 'not_found' || e.code === 'server') { try { state = await api('admin_state'); } catch (x) {} }
     } finally { busy = false; render(); }
@@ -289,8 +297,52 @@
       ]),
       h('p', { class: 'small muted', text: '截止 ' + fmt(s.info.deadline) + (s.flags.deadline ? '（已 flush）' : '（未 flush）') +
         '　關閉 ' + fmt(s.info.closeAt) + (s.flags.close ? '（已 flush）' : '（未 flush）') }),
-      h('p', { class: 'small muted', text: '要改日期或人數上限，請直接編輯 Sheet 的 config 分頁。' })
     ]);
+  }
+
+  /* 設定：課程題目與日期、截止與關閉、人數。輸入中的內容存在 draft，重畫畫面時不會被洗掉 */
+  var FIELD = { classTitle: '課程題目', classDate: '上課日期', classNote: '地點或備註', deadline: '截止時間', closeAt: '關閉時間',
+                groupMin: '每組最少人數', groupMax: '每組最多人數', batchThreshold: '批次分組門檻', maxParticipants: '報名人數上限', finalOverflow: '關閉時落單者併入已滿組別' };
+  var draft = null;
+  function dt(v) { return String(v || '').replace(' ', 'T'); }          /* yyyy-MM-dd HH:mm → datetime-local */
+  function field(key, kind, hint, attrs) {
+    var v = draft[key];
+    var input = kind === 'select'
+      ? h('select', { id: 'f-' + key }, [h('option', { value: 'true', text: '是（可到 4 人）' }), h('option', { value: 'false', text: '否（維持落單）' })])
+      : h('input', Object.assign({ id: 'f-' + key, type: kind, value: kind === 'datetime-local' ? dt(v) : String(v) }, attrs || {}));
+    if (kind === 'select') input.value = String(v);
+    input.addEventListener('input', function () { draft[key] = kind === 'select' ? input.value === 'true' : input.value; });
+    return h('div', { class: 'field' }, [h('label', { for: 'f-' + key, text: FIELD[key] }), input, hint ? h('span', { class: 'small muted', text: hint }) : null]);
+  }
+  function settingsCard(s) {
+    if (!draft) draft = JSON.parse(JSON.stringify(s.config));
+    var form = h('form', { class: 'form', onsubmit: function (ev) {
+      ev.preventDefault();
+      var values = {};
+      Object.keys(FIELD).forEach(function (k) { if (JSON.stringify(draft[k]) !== JSON.stringify(s.config[k])) values[k] = draft[k]; });
+      if (!Object.keys(values).length) { toast('沒有變更。'); return; }
+      run('admin_config', { values: values }, '已儲存設定');
+    } }, [
+      h('h3', { text: '課程' }),
+      field('classTitle', 'text', '顯示在學員頁面最上方，最多 60 字', { maxlength: '60', placeholder: '例如：合一' }),
+      field('classDate', 'datetime-local', '可留白'),
+      field('classNote', 'text', '地點或備註，最多 200 字', { maxlength: '200', placeholder: '例如：二樓長老定額組教室' }),
+      h('h3', { text: '時程' }),
+      field('deadline', 'datetime-local', '截止：等待中的人全部分完'),
+      field('closeAt', 'datetime-local', '關閉報名並做最後一次處理，設在開課前，必須晚於截止'),
+      h('p', { class: 'small muted', text: '時間改到還沒到時，對應的 flush 旗標會自動重設，到新時間再跑一次。' }),
+      h('h3', { text: '人數' }),
+      field('groupMin', 'number', '', { min: '2', max: '6', inputmode: 'numeric' }),
+      field('groupMax', 'number', '', { min: '2', max: '6', inputmode: 'numeric' }),
+      field('batchThreshold', 'number', '截止前，等待人數達到這個數字就分組', { min: '2', max: '60', inputmode: 'numeric' }),
+      field('maxParticipants', 'number', '', { min: '1', max: '500', inputmode: 'numeric' }),
+      field('finalOverflow', 'select', ''),
+      h('div', { class: 'ctl' }, [
+        h('button', { class: 'primary', type: 'submit', disabled: busy, text: '儲存設定' }),
+        h('button', { type: 'button', disabled: busy, text: '還原', onclick: function () { draft = null; render(); } })
+      ])
+    ]);
+    return h('section', { class: 'card' }, [h('h2', { text: '設定' }), form]);
   }
 
   function groupsCard(s) {
@@ -385,7 +437,7 @@
   function render() {
     if (!state) return;
     view.textContent = '';
-    [overview(state), groupsCard(state), membersCard(state), dangerCard()].forEach(function (n) { view.appendChild(n); });
+    [overview(state), settingsCard(state), groupsCard(state), membersCard(state), dangerCard()].forEach(function (n) { view.appendChild(n); });
     reloadBtn.hidden = false;
   }
 
