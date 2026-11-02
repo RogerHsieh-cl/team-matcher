@@ -433,10 +433,13 @@
     loading = true;
     var seq = ++reqSeq;
     try {
+      var tA = performance.now();
       var r = await api('me');
+      var tApi = performance.now() - tA;
       if (seq < appliedSeq) return;                 /* 晚回來的舊回應不能蓋掉新結果 */
       appliedSeq = seq; render(r);
       var ms = Math.round(performance.now() - T0);
+      if (!silent) stamp.textContent += '　共 ' + (ms / 1000).toFixed(1) + ' 秒（LINE ' + (tLiff / 1000).toFixed(1) + '、等回應 ' + (tApi / 1000).toFixed(1) + (r._perf && r._perf.total != null ? '，後端 ' + (r._perf.total / 1000).toFixed(1) : '') + '）';
       if (!silent && ms > 5000) queueLog({ what: '開頁', result: '慢', ms: ms, detail: '' }); else if (!silent) flushLogs();
     }
     catch (e) { if (!silent) renderError(e); }
@@ -460,10 +463,13 @@
 
   /* 開頁先「敲門」：喚醒後端、先建好連線；有上次的畫面就先顯示 */
   try { fetch(GAS_URL, { cache: 'no-store' }).catch(function () {}); } catch (_) {}
+  var tLiff = 0;
   var cached = loadView();
   if (cached) { render(cached); stamp.textContent = '顯示上次資料，更新中…'; }
 
   liff.init({ liffId: LIFF_ID }).then(function () {
+    tLiff = performance.now() - T0;
+    if (!cached) show([card([h('p', { class: 'hint', text: '已連上 LINE，正在向伺服器取得資料…（第一次可能要幾秒）' })])]);
     if (!liff.isLoggedIn()) { liff.login({ redirectUri: location.href }); return; }
     return refresh(false);
   }).catch(function (e) { queueLog({ what: '開頁', result: 'LIFF 初始化失敗', ms: Math.round(performance.now() - T0), detail: String(e && (e.message || e)) }); renderError({ code: 'server' }); });
