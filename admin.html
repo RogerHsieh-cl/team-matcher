@@ -313,16 +313,21 @@
                 classQuestions: '討論問題', groupMin: '每組最少人數', groupMax: '每組最多人數', batchThreshold: '批次分組門檻', maxParticipants: '報名人數上限', finalOverflow: '關閉時落單者併入已滿組別' };
   var draft = null;
   function dt(v) { return String(v || '').replace(' ', 'T'); }          /* yyyy-MM-dd HH:mm → datetime-local */
+  /* 落單者併入人數最少的組，該組會超過「每組最多人數」；標示跟著目前輸入的最多人數走 */
+  function overflowLabel(max) { return '是（併入人數最少的組，會超過上限 ' + String(max) + ' 人）'; }
   function field(key, kind, hint, attrs) {
     var v = draft[key];
     var input = kind === 'textarea'
       ? h('textarea', Object.assign({ id: 'f-' + key, rows: '6' }, attrs || {}))
       : kind === 'select'
-      ? h('select', { id: 'f-' + key }, [h('option', { value: 'true', text: '是（可到 4 人）' }), h('option', { value: 'false', text: '否（維持落單）' })])
+      ? h('select', { id: 'f-' + key }, [h('option', { value: 'true', text: overflowLabel(draft.groupMax) }), h('option', { value: 'false', text: '否（維持落單）' })])
       : h('input', Object.assign({ id: 'f-' + key, type: kind, value: kind === 'datetime-local' ? dt(v) : String(v) }, attrs || {}));
     if (kind === 'select') input.value = String(v);
     if (kind === 'textarea') input.value = String(v);
-    input.addEventListener('input', function () { draft[key] = kind === 'select' ? input.value === 'true' : input.value; });
+    input.addEventListener('input', function () {
+      draft[key] = kind === 'select' ? input.value === 'true' : input.value;
+      if (key === 'groupMax') { var o = document.querySelector('#f-finalOverflow option[value=true]'); if (o) o.textContent = overflowLabel(input.value); }
+    });
     return h('div', { class: 'field' }, [h('label', { for: 'f-' + key, text: FIELD[key] }), input, hint ? h('span', { class: 'small muted', text: hint }) : null]);
   }
   function settingsCard(s) {
@@ -352,7 +357,7 @@
       field('groupMax', 'number', '', { min: '2', max: '6', inputmode: 'numeric' }),
       field('batchThreshold', 'number', '截止前，等待人數達到這個數字就分組', { min: '2', max: '60', inputmode: 'numeric' }),
       field('maxParticipants', 'number', '', { min: '1', max: '500', inputmode: 'numeric' }),
-      field('finalOverflow', 'select', ''),
+      field('finalOverflow', 'select', '關閉時最多會落單「每組最少人數 − 1」人，分散併入人數最少的組，每組多 1 人；人數少、組數不夠時，同一組可能多過 1 人。選「否」則維持落單，由你手動處理。'),
       h('div', { class: 'ctl' }, [
         h('button', { class: 'primary', type: 'submit', disabled: busy, text: '儲存設定' }),
         h('button', { type: 'button', disabled: busy, text: '還原', onclick: function () { draft = null; render(); } })
