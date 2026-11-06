@@ -310,7 +310,7 @@
 
   /* 設定：課程題目與日期、截止與關閉、人數。輸入中的內容存在 draft，重畫畫面時不會被洗掉 */
   var FIELD = { siteTitle: '頁面標題', groupLink: '分組連結', classTitle: '課程題目', classDate: '上課日期', classTeacher: '本周教師', classNote: '地點或備註', deadline: '截止時間', closeAt: '關閉時間',
-                classQuestions: '討論問題', groupMin: '每組最少人數', groupMax: '每組最多人數', batchThreshold: '批次分組門檻', maxParticipants: '報名人數上限', finalOverflow: '關閉時落單者併入已滿組別' };
+                classQuestions: '討論問題', groupMin: '每組最少人數', groupMax: '每組最多人數', batchThreshold: '批次分組門檻', maxParticipants: '報名人數上限', finalOverflow: '關閉時落單者併入已滿組別', autoGroup: '分組方式' };
   var draft = null;
   function dt(v) { return String(v || '').replace(' ', 'T'); }          /* yyyy-MM-dd HH:mm → datetime-local */
   /* 落單者併入人數最少的組，該組會超過「每組最多人數」；標示跟著目前輸入的最多人數走 */
@@ -473,6 +473,43 @@
     return h('section', { class: 'card' }, kids);
   }
 
+  /* 立刻分組：暫停自動分組 → 邀請大家加入 → 按鈕當下分組。預覽用後端同一套分法算 */
+  function flushCard(s) {
+    var auto = s.info.autoGroup !== false, pv = s.flushPreview || { waiting: s.counts.waiting, sizes: [], left: s.counts.waiting };
+    var plan = pv.sizes.length ? pv.waiting - pv.left + ' 人 → ' + pv.sizes.join('、') + ' 人組（共 ' + pv.sizes.length + ' 組）' : '目前湊不成組';
+    var kids = [
+      h('div', { class: 'top' }, [
+        h('h2', { text: '立刻分組' }),
+        h('span', { class: 'pill' + (auto ? '' : ' warn'), text: auto ? '自動分組中' : '已暫停（手動）' })
+      ]),
+      h('p', { class: 'small muted', text: auto
+        ? '要一次邀請大家時：先按「暫停自動分組」，等大家都加入，再按下面的立刻分組。'
+        : '暫停中：新報名的人只會進等待區，不會自動分組。人到齊後按立刻分組；之後想恢復再按「恢復自動分組」。' }),
+      h('p', { text: '等待中 ' + pv.waiting + ' 人　預計：' + plan + (pv.left ? '，剩 ' + pv.left + ' 人落單' : '') }),
+      h('div', { class: 'row' }, [
+        h('button', { type: 'button', disabled: busy, text: auto ? '暫停自動分組' : '恢復自動分組',
+          onclick: function () { run('admin_config', { values: { autoGroup: !auto } }, auto ? '已暫停自動分組' : '已恢復自動分組'); } })
+      ])
+    ];
+    [{ key: 'flush1', label: '立刻分組', overflow: false, note: '落單者繼續等待' },
+     { key: 'flush2', label: '立刻分組，落單者併入現有組', overflow: true, note: '落單者併入人數最少的組（可能超過每組上限）' }].forEach(function (o) {
+      if (armed === o.key) {
+        kids.push(h('div', { class: 'confirm' }, [
+          h('button', { type: 'button', text: '確定：' + o.label, onclick: function () {
+            run('admin_flush_now', { overflow: o.overflow }, '已分組'); } }),
+          h('button', { type: 'button', text: '取消', onclick: function () { armed = null; render(); } })
+        ]));
+      } else {
+        kids.push(h('div', { class: 'row' }, [
+          h('button', { class: 'primary', type: 'button', disabled: busy || !pv.waiting, text: o.label, onclick: function () { arm(o.key); } }),
+          h('span', { class: 'small muted', text: o.note })
+        ]));
+      }
+    });
+    if (s.flushResult) kids.push(h('p', { class: 'small', text: '上次結果：分了 ' + s.flushResult.grouped + ' 人，新增 ' + s.flushResult.newGroups + ' 組，剩 ' + s.flushResult.left + ' 人等待。' }));
+    return h('section', { class: 'card' }, kids);
+  }
+
   function dangerCard() {
     return h('section', { class: 'card danger-zone' }, [
       h('h2', { text: '危險操作' }),
@@ -502,7 +539,7 @@
   function render() {
     if (!state) return;
     view.textContent = '';
-    [overview(state), settingsCard(state), groupsCard(state), membersCard(state), diagCard(), dangerCard()].forEach(function (n) { view.appendChild(n); });
+    [overview(state), flushCard(state), settingsCard(state), groupsCard(state), membersCard(state), diagCard(), dangerCard()].forEach(function (n) { view.appendChild(n); });
     reloadBtn.hidden = false;
   }
 

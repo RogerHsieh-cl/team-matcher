@@ -384,7 +384,9 @@
   function renderWaiting(r) {
     var info = r.info || {};
     var hint;
-    if (info.phase === 'early') {
+    if (info.autoGroup === false && info.phase !== 'ended') {
+      hint = '管理員會在人到齊後統一分組，分好組這裡會自動顯示，請稍候。';
+    } else if (info.phase === 'early') {
       hint = '等待人數達 ' + info.batchThreshold + ' 人，或 ' + fmt(info.deadline) + ' 截止時，系統會隨機分組。';
     } else if (info.phase === 'late') {
       hint = '有新成員加入時會立即配對，' + fmt(info.closeAt) + ' 前都會持續處理。';
