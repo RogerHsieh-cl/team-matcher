@@ -381,6 +381,12 @@
     ])];
   }
 
+  /* 每組人數：照後台設定顯示（最少＝最多就只寫一個數字） */
+  function sizeText(info) {
+    var a = info.groupMin, b = info.groupMax;
+    return a === b ? '每組 ' + a + ' 人' : '每組 ' + a + ' 到 ' + b + ' 人';
+  }
+
   /* 後台開啟 selfGroup 時才顯示：學員自己按下去，就把目前等待的人分組 */
   function selfGroupBox(info) {
     if (!info || !info.selfGroup || info.phase === 'ended') return null;
@@ -396,14 +402,14 @@
       }).catch(function (e) { msg.textContent = errText(e); btn.disabled = false; });
     } });
     msg.id = 'sg-msg';
-    return h('div', { class: 'sg' }, [h('p', { class: 'hint', text: '人到齊了？按下去會立刻把目前等待的人分組。' }), btn, msg]);
+    return h('div', { class: 'sg' }, [h('p', { class: 'hint', text: '人到齊了？按下去會立刻把目前等待的人分組（' + sizeText(info) + '）。' }), btn, msg]);
   }
 
   function renderWaiting(r) {
     var info = r.info || {};
     var hint;
     if (info.autoGroup === false && info.phase !== 'ended') {
-      hint = '管理員會在人到齊後統一分組，分好組這裡會自動顯示，請稍候。';
+      hint = '管理員會在人到齊後統一分組（' + sizeText(info) + '），分好組這裡會自動顯示，請稍候。';
     } else if (info.phase === 'early') {
       hint = '等待人數達 ' + info.batchThreshold + ' 人，或 ' + fmt(info.deadline) + ' 截止時，系統會隨機分組。';
     } else if (info.phase === 'late') {
