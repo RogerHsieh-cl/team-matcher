@@ -476,6 +476,26 @@
     return h('section', { class: 'card' }, kids);
   }
 
+  /* 自助分組模式：一鍵連動 暫停自動分組＋免邀請碼＋顯示學員「立刻分組」按鈕；關閉時三項一起還原 */
+  function selfModeCard(s) {
+    var i = s.info, on = i.autoGroup === false && i.requireCode === false && i.selfGroup === true;
+    var partial = !on && (i.autoGroup === false || i.requireCode === false || i.selfGroup === true);
+    var items = [['分組方式', i.autoGroup === false ? '手動（暫停自動分組）' : '自動'], ['邀請碼', i.requireCode === false ? '不用輸入' : '要輸入'], ['學員「立刻分組」按鈕', i.selfGroup === true ? '顯示' : '不顯示']];
+    return h('section', { class: 'card' }, [
+      h('div', { class: 'top' }, [
+        h('h2', { text: '自助分組模式' }),
+        h('span', { class: 'pill' + (on ? ' warn' : ''), text: on ? '已開啟' : partial ? '部分開啟' : '關閉' })
+      ]),
+      h('p', { class: 'small muted', text: '開啟後：暫停自動分組、免輸入邀請碼、學員前台顯示「立刻分組」按鈕。關閉後三項一起還原。' }),
+      h('ul', { class: 'small' }, items.map(function (x) { return h('li', { text: x[0] + '：' + x[1] }); })),
+      on ? h('button', { type: 'button', disabled: busy, text: '關閉自助模式（還原）',
+             onclick: function () { run('admin_config', { values: { autoGroup: true, requireCode: true, selfGroup: false } }, '已關閉自助模式'); } })
+         : h('button', { class: 'primary', type: 'button', disabled: busy, text: partial ? '開啟自助模式（補齊三項）' : '開啟自助模式',
+             onclick: function () { run('admin_config', { values: { autoGroup: false, requireCode: false, selfGroup: true } }, '已開啟自助模式'); } }),
+      on ? h('p', { class: 'small muted', text: '提醒：目前知道連結的人都能報名。活動結束後記得關閉。' }) : null
+    ]);
+  }
+
   /* 立刻分組：暫停自動分組 → 邀請大家加入 → 按鈕當下分組。預覽用後端同一套分法算 */
   function flushCard(s) {
     var auto = s.info.autoGroup !== false, pv = s.flushPreview || { waiting: s.counts.waiting, sizes: [], left: s.counts.waiting };
@@ -542,7 +562,7 @@
   function render() {
     if (!state) return;
     view.textContent = '';
-    [overview(state), flushCard(state), settingsCard(state), groupsCard(state), membersCard(state), diagCard(), dangerCard()].forEach(function (n) { view.appendChild(n); });
+    [overview(state), selfModeCard(state), flushCard(state), settingsCard(state), groupsCard(state), membersCard(state), diagCard(), dangerCard()].forEach(function (n) { view.appendChild(n); });
     reloadBtn.hidden = false;
   }
 
