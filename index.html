@@ -402,14 +402,14 @@
       }).catch(function (e) { msg.textContent = errText(e); btn.disabled = false; });
     } });
     msg.id = 'sg-msg';
-    return h('div', { class: 'sg' }, [h('p', { class: 'hint', text: '人到齊了？按下去會立刻把目前等待的人分組（' + sizeText(info) + '）。' }), btn, msg]);
+    return h('div', { class: 'sg' }, [h('p', { class: 'hint', text: '人到齊了？按下去會立刻把目前等待的人分組（' + sizeText(info) + '，人數不整除時部分組別會多一些人）。' }), btn, msg]);
   }
 
   function renderWaiting(r) {
     var info = r.info || {};
     var hint;
     if (info.autoGroup === false && info.phase !== 'ended') {
-      hint = '管理員會在人到齊後統一分組（' + sizeText(info) + '），分好組這裡會自動顯示，請稍候。';
+      hint = '管理員會在人到齊後統一分組（' + sizeText(info) + '，人數不整除時部分組別會多一些人），分好組這裡會自動顯示，請稍候。';
     } else if (info.phase === 'early') {
       hint = '等待人數達 ' + info.batchThreshold + ' 人，或 ' + fmt(info.deadline) + ' 截止時，系統會隨機分組。';
     } else if (info.phase === 'late') {
@@ -422,9 +422,6 @@
       h('p', { class: 'big', text: '等待分組' }),
       h('p', { text: '目前有 ' + r.poolSize + ' 人在等待。' }),
       h('p', { class: 'hint', text: hint }),
-      info.phase !== 'ended' ? h('p', { class: 'hint', text: '不足 ' + info.groupMin + ' 人的落單者：' + (info.finalOverflow === false
-        ? '無法單獨成組，會維持等待，請聯絡主辦人。'
-        : fmt(info.closeAt) + ' 報名關閉時，會併入人數最少的組（該組可能超過 ' + info.groupMax + ' 人）；若全部人數都不足 ' + info.groupMin + ' 人，則無法成組，請聯絡主辦人。') }) : null,
       selfGroupBox(info),
       leaveBox(info)
     ])];

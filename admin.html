@@ -499,7 +499,7 @@
   /* 立刻分組：暫停自動分組 → 邀請大家加入 → 按鈕當下分組。預覽用後端同一套分法算 */
   function flushCard(s) {
     var auto = s.info.autoGroup !== false, pv = s.flushPreview || { waiting: s.counts.waiting, sizes: [], left: s.counts.waiting };
-    var plan = pv.sizes.length ? pv.waiting - pv.left + ' 人 → ' + pv.sizes.join('、') + ' 人組（共 ' + pv.sizes.length + ' 組）' : '目前湊不成組';
+    var plan = pv.sizes.length ? (pv.waiting - pv.left) + ' 人 → ' + pv.sizes.join('、') + ' 人組（共 ' + pv.sizes.length + ' 組）' : '沒有人在等待';
     var kids = [
       h('div', { class: 'top' }, [
         h('h2', { text: '立刻分組' }),
@@ -508,28 +508,25 @@
       h('p', { class: 'small muted', text: auto
         ? '要一次邀請大家時：先按「暫停自動分組」，等大家都加入，再按下面的立刻分組。'
         : '暫停中：新報名的人只會進等待區，不會自動分組。人到齊後按立刻分組；之後想恢復再按「恢復自動分組」。' }),
-      h('p', { text: '等待中 ' + pv.waiting + ' 人　預計：' + plan + (pv.left ? '，剩 ' + pv.left + ' 人落單' : '') }),
+      h('p', { text: '等待中 ' + pv.waiting + ' 人　預計：' + plan + (pv.left ? '；多出的 ' + pv.left + ' 人會併入人數最少的組（該組會多一些人）' : '') }),
       h('div', { class: 'row' }, [
         h('button', { type: 'button', disabled: busy, text: auto ? '暫停自動分組' : '恢復自動分組',
           onclick: function () { run('admin_config', { values: { autoGroup: !auto } }, auto ? '已暫停自動分組' : '已恢復自動分組'); } })
       ])
     ];
-    [{ key: 'flush1', label: '立刻分組', overflow: false, note: '落單者繼續等待' },
-     { key: 'flush2', label: '立刻分組，落單者併入現有組', overflow: true, note: '落單者併入人數最少的組（可能超過每組上限）' }].forEach(function (o) {
-      if (armed === o.key) {
-        kids.push(h('div', { class: 'confirm' }, [
-          h('button', { type: 'button', text: '確定：' + o.label, onclick: function () {
-            run('admin_flush_now', { overflow: o.overflow }, '已分組'); } }),
-          h('button', { type: 'button', text: '取消', onclick: function () { armed = null; render(); } })
-        ]));
-      } else {
-        kids.push(h('div', { class: 'row' }, [
-          h('button', { class: 'primary', type: 'button', disabled: busy || !pv.waiting, text: o.label, onclick: function () { arm(o.key); } }),
-          h('span', { class: 'small muted', text: o.note })
-        ]));
-      }
-    });
-    if (s.flushResult) kids.push(h('p', { class: 'small', text: '上次結果：分了 ' + s.flushResult.grouped + ' 人，新增 ' + s.flushResult.newGroups + ' 組，剩 ' + s.flushResult.left + ' 人等待。' }));
+    var o = { key: 'flush1', label: '立刻分組', overflow: true };
+    if (armed === o.key) {
+      kids.push(h('div', { class: 'confirm' }, [
+        h('button', { type: 'button', text: '確定：' + o.label, onclick: function () { run('admin_flush_now', { overflow: true }, '已分組'); } }),
+        h('button', { type: 'button', text: '取消', onclick: function () { armed = null; render(); } })
+      ]));
+    } else {
+      kids.push(h('div', { class: 'row' }, [
+        h('button', { class: 'primary', type: 'button', disabled: busy || !pv.waiting, text: o.label, onclick: function () { arm(o.key); } }),
+        h('span', { class: 'small muted', text: '每個人都會分到組，人數不整除時部分組別多一些' })
+      ]));
+    }
+    if (s.flushResult) kids.push(h('p', { class: 'small', text: '上次結果：分了 ' + s.flushResult.grouped + ' 人，新增 ' + s.flushResult.newGroups + ' 組。' }));
     return h('section', { class: 'card' }, kids);
   }
 
