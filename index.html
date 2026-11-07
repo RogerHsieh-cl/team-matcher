@@ -422,6 +422,9 @@
       h('p', { class: 'big', text: '等待分組' }),
       h('p', { text: '目前有 ' + r.poolSize + ' 人在等待。' }),
       h('p', { class: 'hint', text: hint }),
+      info.phase !== 'ended' ? h('p', { class: 'hint', text: '不足 ' + info.groupMin + ' 人的落單者：' + (info.finalOverflow === false
+        ? '無法單獨成組，會維持等待，請聯絡主辦人。'
+        : fmt(info.closeAt) + ' 報名關閉時，會併入人數最少的組（該組可能超過 ' + info.groupMax + ' 人）；若全部人數都不足 ' + info.groupMin + ' 人，則無法成組，請聯絡主辦人。') }) : null,
       selfGroupBox(info),
       leaveBox(info)
     ])];
