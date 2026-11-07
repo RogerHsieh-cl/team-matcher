@@ -310,7 +310,7 @@
 
   /* 設定：課程題目與日期、截止與關閉、人數。輸入中的內容存在 draft，重畫畫面時不會被洗掉 */
   var FIELD = { siteTitle: '頁面標題', groupLink: '分組連結', classTitle: '課程題目', classDate: '上課日期', classTeacher: '本周教師', classNote: '地點或備註', deadline: '截止時間', closeAt: '關閉時間',
-                classQuestions: '討論問題', groupMin: '每組最少人數', groupMax: '每組最多人數', batchThreshold: '批次分組門檻', maxParticipants: '報名人數上限', finalOverflow: '關閉時落單者併入已滿組別', autoGroup: '分組方式' };
+                classQuestions: '討論問題', groupMin: '每組最少人數', groupMax: '每組最多人數', batchThreshold: '批次分組門檻', maxParticipants: '報名人數上限', finalOverflow: '關閉時落單者併入已滿組別', autoGroup: '分組方式', requireCode: '輸入邀請碼', selfGroup: '學員自助分組按鈕' };
   var draft = null;
   function dt(v) { return String(v || '').replace(' ', 'T'); }          /* yyyy-MM-dd HH:mm → datetime-local */
   /* 落單者併入人數最少的組，該組會超過「每組最多人數」；標示跟著目前輸入的最多人數走 */
@@ -320,7 +320,7 @@
     var input = kind === 'textarea'
       ? h('textarea', Object.assign({ id: 'f-' + key, rows: '6' }, attrs || {}))
       : kind === 'select'
-      ? h('select', { id: 'f-' + key }, [h('option', { value: 'true', text: overflowLabel(draft.groupMax) }), h('option', { value: 'false', text: '否（維持落單）' })])
+      ? h('select', { id: 'f-' + key }, (attrs && attrs.opts ? attrs.opts : [['true', overflowLabel(draft.groupMax)], ['false', '否（維持落單）']]).map(function (o) { return h('option', { value: o[0], text: o[1] }); }))
       : h('input', Object.assign({ id: 'f-' + key, type: kind, value: kind === 'datetime-local' ? dt(v) : String(v) }, attrs || {}));
     if (kind === 'select') input.value = String(v);
     if (kind === 'textarea') input.value = String(v);
@@ -352,6 +352,9 @@
       field('deadline', 'datetime-local', '截止：等待中的人全部分完'),
       field('closeAt', 'datetime-local', '關閉報名並做最後一次處理，設在開課前，必須晚於截止'),
       h('p', { class: 'small muted', text: '時間改到還沒到時，對應的 flush 旗標會自動重設，到新時間再跑一次。' }),
+      h('h3', { text: '學員操作' }),
+      field('requireCode', 'select', '關閉後，學員頁不顯示邀請碼輸入框，知道連結的人按「加入」就能報名', { opts: [['true', '要輸入邀請碼'], ['false', '不用輸入（前台不顯示）']] }),
+      field('selfGroup', 'select', '開啟後，等待中的學員會看到「立刻分組」按鈕，可自己觸發分組（不動既有組別，湊不成組的人繼續等待）', { opts: [['false', '不顯示按鈕'], ['true', '顯示按鈕']] }),
       h('h3', { text: '人數' }),
       field('groupMin', 'number', '', { min: '2', max: '6', inputmode: 'numeric' }),
       field('groupMax', 'number', '', { min: '2', max: '6', inputmode: 'numeric' }),

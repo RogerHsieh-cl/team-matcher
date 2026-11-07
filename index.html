@@ -349,7 +349,7 @@
         });
       } });
       var no = h('button', { type: 'button', class: 'ghost', text: '取消', onclick: idle });
-      box.appendChild(h('p', { class: 'hint', text: '退出後會從目前的組別移除，報名關閉前可以重新報名（要再輸入邀請碼）。' }));
+      box.appendChild(h('p', { class: 'hint', text: '退出後會從目前的組別移除，報名關閉前可以重新報名（要再重新加入）。' }));
       box.appendChild(h('div', { class: 'row' }, [yes, no]));
       box.appendChild(msg);
     }
@@ -381,6 +381,24 @@
     ])];
   }
 
+  /* 後台開啟 selfGroup 時才顯示：學員自己按下去，就把目前等待的人分組 */
+  function selfGroupBox(info) {
+    if (!info || !info.selfGroup || info.phase === 'ended') return null;
+    var msg = h('p', { class: 'msg', role: 'status' });
+    var btn = h('button', { type: 'button', text: '立刻分組', onclick: function () {
+      btn.disabled = true; msg.textContent = '';
+      var seq = ++reqSeq;
+      api('group_now', {}, false).then(function (r) {
+        appliedSeq = Math.max(appliedSeq, seq);
+        if (r.status === 'grouped') return render(r);
+        render(r);
+        var m = document.getElementById('sg-msg'); if (m) m.textContent = '目前等待的人數還不夠成組，有更多人加入後再按一次。';
+      }).catch(function (e) { msg.textContent = errText(e); btn.disabled = false; });
+    } });
+    msg.id = 'sg-msg';
+    return h('div', { class: 'sg' }, [h('p', { class: 'hint', text: '人到齊了？按下去會立刻把目前等待的人分組。' }), btn, msg]);
+  }
+
   function renderWaiting(r) {
     var info = r.info || {};
     var hint;
@@ -398,6 +416,7 @@
       h('p', { class: 'big', text: '等待分組' }),
       h('p', { text: '目前有 ' + r.poolSize + ' 人在等待。' }),
       h('p', { class: 'hint', text: hint }),
+      selfGroupBox(info),
       leaveBox(info)
     ])];
   }
@@ -410,23 +429,24 @@
       ])];
     }
     var info = r.info || {};
-    var input = h('input', { id: 'code', type: 'text', autocomplete: 'off', autocapitalize: 'characters',
+    var needCode = info.requireCode !== false;
+    var input = !needCode ? null : h('input', { id: 'code', type: 'text', autocomplete: 'off', autocapitalize: 'characters',
                              maxlength: '32', placeholder: '輸入邀請碼' });
     var msg = h('p', { class: 'msg', role: 'alert' });
     var btn = h('button', { type: 'submit', text: '加入組隊' });
     var form = h('form', { onsubmit: function (ev) {
       ev.preventDefault();
-      var code = input.value.trim();
-      if (!code) { msg.textContent = '請輸入邀請碼。'; return; }
+      var code = needCode ? input.value.trim() : '';
+      if (needCode && !code) { msg.textContent = '請輸入邀請碼。'; return; }
       btn.disabled = true; msg.textContent = '';
       var seq = ++reqSeq;
       api('join', { code: code }, true).then(function (r) { appliedSeq = Math.max(appliedSeq, seq); render(r); }).catch(function (e) {
         msg.textContent = errText(e); btn.disabled = false;
       });
-    } }, [h('label', { for: 'code', text: '邀請碼' }), input, btn, msg]);
+    } }, needCode ? [h('label', { for: 'code', text: '邀請碼' }), input, btn, msg] : [btn, msg]);
     return [card([
       h('p', { class: 'label', text: '加入組隊' }),
-      h('p', { class: 'big', text: '輸入邀請碼' }),
+      h('p', { class: 'big', text: needCode ? '輸入邀請碼' : '按下加入即可' }),
       h('p', { class: 'hint', text: fmt(info.deadline) + ' 截止時，等待中的人會全部分完。每組 ' +
         info.groupMin + ' 到 ' + info.groupMax + ' 人。' }),
       form
