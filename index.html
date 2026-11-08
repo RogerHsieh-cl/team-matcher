@@ -387,7 +387,7 @@
     return [card([
       h('div', { class: 'hd' }, [h('p', { class: 'label', text: '你的組別' }), h('p', { class: 'big', text: r.groupId })]),
       list,
-      more ? h('p', { class: 'hint', text: '目前 ' + r.members.length + ' 人，之後可能再有人加入這一組。' }) : null,
+      more && info.showHelp !== false ? h('p', { class: 'hint', text: '目前 ' + r.members.length + ' 人，之後可能再有人加入這一組。' }) : null,
       linkNode(info),
       groupListNode(r),
       leaveBox(info)
@@ -415,7 +415,7 @@
       }).catch(function (e) { msg.textContent = errText(e); btn.disabled = false; });
     } });
     msg.id = 'sg-msg';
-    return h('div', { class: 'sg' }, [h('p', { class: 'hint', text: '大家可按可不按：只要有一個人按，就會幫所有等待的人分組（' + sizeText(info) + '，人數不夠也會先分）。之後才加入的人，按了會補進人數不足的組。' }), btn, msg]);
+    return h('div', { class: 'sg' }, [info.showHelp === false ? null : h('p', { class: 'hint', text: '大家可按可不按：只要有一個人按，就會幫所有等待的人分組（' + sizeText(info) + '，人數不夠也會先分）。之後才加入的人，按了會補進人數不足的組。' }), btn, msg]);
   }
 
   function renderWaiting(r) {
@@ -434,7 +434,7 @@
       h('p', { class: 'label', text: '狀態' }),
       h('p', { class: 'big', text: '等待分組' }),
       h('p', { text: '目前有 ' + r.poolSize + ' 人在等待。' }),
-      h('p', { class: 'hint', text: hint }),
+      info.showHelp === false ? null : h('p', { class: 'hint', text: hint }),
       selfGroupBox(info),
       groupListNode(r),
       leaveBox(info)
@@ -467,7 +467,7 @@
     return [card([
       h('p', { class: 'label', text: '加入組隊' }),
       h('p', { class: 'big', text: needCode ? '輸入邀請碼' : '按下加入即可' }),
-      h('p', { class: 'hint', text: fmt(info.deadline) + ' 截止時，等待中的人會全部分完。每組 ' +
+      info.showHelp === false ? null : h('p', { class: 'hint', text: fmt(info.deadline) + ' 截止時，等待中的人會全部分完。每組 ' +
         info.groupMin + ' 到 ' + info.groupMax + ' 人。' }),
       form
     ])];

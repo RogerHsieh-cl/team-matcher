@@ -316,7 +316,7 @@
 
   /* 設定：課程題目與日期、截止與關閉、人數。輸入中的內容存在 draft，重畫畫面時不會被洗掉 */
   var FIELD = { siteTitle: '頁面標題', groupLink: '分組連結', classTitle: '課程題目', classDate: '上課日期', classTeacher: '本周教師', classNote: '地點或備註', deadline: '截止時間', closeAt: '關閉時間',
-                classQuestions: '討論問題', groupMin: '每組最少人數', groupMax: '每組最多人數', batchThreshold: '批次分組門檻', maxParticipants: '報名人數上限', finalOverflow: '關閉時落單者併入已滿組別', autoGroup: '分組方式', showGroups: '學員頁顯示各組人數', showTitle: '題目：學員頁顯示', showDate: '日期：學員頁顯示', showTeacher: '教師：學員頁顯示', showQuestions: '討論問題：學員頁顯示', requireCode: '輸入邀請碼', selfGroup: '學員自助分組按鈕' };
+                classQuestions: '討論問題', groupMin: '每組最少人數', groupMax: '每組最多人數', batchThreshold: '批次分組門檻', maxParticipants: '報名人數上限', finalOverflow: '關閉時落單者併入已滿組別', autoGroup: '分組方式', showHelp: '學員頁顯示說明文字', showGroups: '學員頁顯示各組人數', showTitle: '題目：學員頁顯示', showDate: '日期：學員頁顯示', showTeacher: '教師：學員頁顯示', showQuestions: '討論問題：學員頁顯示', requireCode: '輸入邀請碼', selfGroup: '學員自助分組按鈕' };
   var draft = null;
   function dt(v) { return String(v || '').replace(' ', 'T'); }          /* yyyy-MM-dd HH:mm → datetime-local */
   /* 落單者併入人數最少的組，該組會超過「每組最多人數」；標示跟著目前輸入的最多人數走 */
@@ -348,6 +348,7 @@
       h('h3', { text: '頁面' }),
       field('siteTitle', 'text', '學員頁最上方標題，最多 30 字，留白顯示「自動組隊」', { maxlength: '30', placeholder: '自動組隊' }),
       field('groupLink', 'text', '分組後顯示給學員的連結（LINE 社群、共同文件等），https:// 開頭，可留白', { maxlength: '300', placeholder: 'https://line.me/ti/g2/...' }),
+      field('showHelp', 'select', '關閉後，學員頁不顯示操作說明（例如「大家可按可不按…」、「每組 4 到 5 人」等提示），畫面更簡潔；按鈕與組別照常顯示', { opts: [['true', '顯示說明文字'], ['false', '不顯示（簡潔）']] }),
       field('showGroups', 'select', '開啟後，學員頁會顯示「目前各組人數」（只有組別編號與人數，看不到其他組的成員名字）', { opts: [['false', '只看得到自己的組'], ['true', '顯示各組人數']] }),
       h('h3', { text: '課程' }),
       field('classTitle', 'text', '顯示在學員頁面最上方，最多 60 字', { maxlength: '60', placeholder: '例如：合一' }),
