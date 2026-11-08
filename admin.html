@@ -104,6 +104,7 @@
   var GAS_URL = 'https://script.google.com/macros/s/AKfycbwqSmMUMeupZ80c5r3iX5-cKj5a4oHzmfMYhYLPs5Ulae2VRxwnhTBRZlwpDw0SoFAY/exec';
 
   var ERR = {
+    enroll_closed: '這個邀請連結已經關閉，請向主管理員索取新的連結。', bad_token: '邀請連結不正確或已更換，請向主管理員索取新的連結。', locked: '嘗試次數過多，請 10 分鐘後再試。',
     forbidden: '你的帳號不是管理員。', confirm: '確認字串不正確。', not_found: '找不到這位成員或組別，可能已被異動，請重新整理。',
     busy: '系統忙碌中，請再按一次。', auth: '登入已逾時，請重新登入。',
     invalid: '欄位格式不正確：',
@@ -543,6 +544,42 @@
     ]);
   }
 
+  /* 教師邀請連結（只有主管理員看得到）：開啟後把連結給教師，他點開就自動成為管理員；完成後關閉 */
+  function enrollCard(s) {
+    var en = s.enroll;
+    if (!en || !en.isSuper) return null;
+    var link = en.open && en.token ? 'https://liff.line.me/' + LIFF_ID + '/admin.html?join=' + en.token : '';
+    var kids = [
+      h('div', { class: 'top' }, [
+        h('h2', { text: '教師管理員' }),
+        h('span', { class: 'pill' + (en.open ? ' warn' : ''), text: en.open ? '邀請連結開啟中' : '邀請連結關閉' })
+      ]),
+      h('p', { class: 'small muted', text: '開啟後把連結傳給教師，他用 LINE 點開就自動成為管理員，不用再貼 userId。教師都加入後，記得關閉。關閉後連結立刻失效，已加入的人不受影響。' })
+    ];
+    if (en.open) {
+      var cp = h('button', { type: 'button', text: '複製連結', onclick: function () { copyText(link).then(function (ok) { toast(ok ? '已複製邀請連結' : '複製失敗，請手動選取', !ok); }); } });
+      kids.push(h('p', { class: 'small' }, [h('code', { text: link, style: 'overflow-wrap:anywhere' })]));
+      kids.push(h('div', { class: 'row' }, [cp, h('button', { class: 'outline-danger', type: 'button', disabled: busy, text: '關閉邀請連結',
+        onclick: function () { run('admin_enroll_close', {}, '已關閉邀請連結'); } })]));
+    } else {
+      kids.push(h('button', { class: 'primary', type: 'button', disabled: busy, text: '開啟邀請連結',
+        onclick: function () { run('admin_enroll_open', {}, '已開啟邀請連結'); } }));
+    }
+    kids.push(h('h3', { text: '透過連結加入的管理員（' + (en.admins || []).length + '）' }));
+    if (!(en.admins || []).length) kids.push(h('p', { class: 'small muted', text: '目前沒有。' }));
+    (en.admins || []).forEach(function (a) {
+      var key = 'rev:' + a.userId;
+      kids.push(h('div', { class: 'row' }, [
+        h('span', { class: 'names', text: a.name + '　' + a.at }),
+        armed === key
+          ? h('span', {}, [h('button', { class: 'danger', type: 'button', text: '確定移除', onclick: function () { run('admin_revoke', { userId: a.userId }, '已移除管理員'); } }),
+                           h('button', { type: 'button', text: '取消', onclick: function () { armed = null; render(); } })])
+          : h('button', { class: 'outline-danger', type: 'button', disabled: busy, text: '移除權限', onclick: function () { arm(key); } })
+      ]));
+    });
+    return h('section', { class: 'card' }, kids);
+  }
+
   function notAdmin(e) {
     var id = (e.data && e.data.userId) || '';
     return [h('section', { class: 'card' }, [
@@ -559,7 +596,7 @@
   function render() {
     if (!state) return;
     view.textContent = '';
-    [overview(state), selfModeCard(state), flushCard(state), settingsCard(state), groupsCard(state), membersCard(state), diagCard(), dangerCard()].forEach(function (n) { view.appendChild(n); });
+    [overview(state), selfModeCard(state), flushCard(state), settingsCard(state), groupsCard(state), membersCard(state), enrollCard(state), diagCard(), dangerCard()].forEach(function (n) { if (n) view.appendChild(n); });
     reloadBtn.hidden = false;
   }
 
@@ -573,8 +610,29 @@
     view.appendChild(h('section', { class: 'card' }, [h('p', { text: ERR[e && e.code] || ERR.server }), again]));
   }
 
+  /* 邀請連結：https://liff.line.me/<LIFF_ID>/admin.html?join=<token>。登入轉址後 token 可能在 liff.state 裡，先存進 sessionStorage */
+  function joinToken() {
+    var t = '';
+    try {
+      var q = new URLSearchParams(location.search);
+      t = q.get('join') || '';
+      if (!t) { var m = /[?&]join=([A-Za-z0-9]+)/.exec(decodeURIComponent(q.get('liff.state') || '')); t = m ? m[1] : ''; }
+      if (t) sessionStorage.setItem('tm_join', t); else t = sessionStorage.getItem('tm_join') || '';
+    } catch (_) {}
+    return /^[A-Za-z0-9]{8,64}$/.test(t) ? t : '';
+  }
+  var JOIN = joinToken();
   async function load() {
-    try { state = await api('admin_state'); render(); flushLogs(); } catch (e) { fail(e); }
+    try { state = await api('admin_state'); render(); flushLogs(); }
+    catch (e) {
+      if (e && e.code === 'forbidden' && JOIN) {                      /* 不是管理員但帶著邀請連結：自動申請加入一次 */
+        var tk = JOIN; JOIN = '';
+        try { sessionStorage.removeItem('tm_join'); } catch (_) {}
+        try { await api('enroll', { token: tk }); try { history.replaceState(null, '', location.pathname); } catch (_) {} return load(); }
+        catch (e2) { view.textContent = ''; view.appendChild(h('section', { class: 'card' }, [h('h2', { text: '無法加入管理員' }), h('p', { text: ERR[e2 && e2.code] || ERR.server })])); reloadBtn.hidden = false; return; }
+      }
+      fail(e);
+    }
   }
 
   reloadBtn.addEventListener('click', function () { if (!busy) { armed = null; load(); } });
