@@ -511,7 +511,10 @@
   /* 立刻分組：暫停自動分組 → 邀請大家加入 → 按鈕當下分組。預覽用後端同一套分法算 */
   function flushCard(s) {
     var auto = s.info.autoGroup !== false, pv = s.flushPreview || { waiting: s.counts.waiting, sizes: [], left: s.counts.waiting };
-    var plan = pv.sizes.length ? (pv.waiting - pv.left) + ' 人 → ' + pv.sizes.join('、') + ' 人組（共 ' + pv.sizes.length + ' 組）' : '沒有人在等待';
+    var parts = [];
+    (pv.filled || []).forEach(function (f) { parts.push('補進 ' + f.id + '（+' + f.add + '）'); });
+    if (pv.sizes.length) parts.push('新分 ' + pv.sizes.join('、') + ' 人組');
+    var plan = parts.length ? parts.join('；') : '沒有人在等待';
     var kids = [
       h('div', { class: 'top' }, [
         h('h2', { text: '立刻分組' }),
@@ -520,7 +523,7 @@
       h('p', { class: 'small muted', text: auto
         ? '要一次邀請大家時：先按「暫停自動分組」，等大家都加入，再按下面的立刻分組。'
         : '暫停中：新報名的人只會進等待區，不會自動分組。人到齊後按立刻分組；之後想恢復再按「恢復自動分組」。' }),
-      h('p', { text: '等待中 ' + pv.waiting + ' 人　預計：' + plan + (pv.left ? '；多出的 ' + pv.left + ' 人會併入人數最少的組（該組會多一些人）' : '') }),
+      h('p', { text: '等待中 ' + pv.waiting + ' 人　預計：' + plan + '' }),
       h('div', { class: 'row' }, [
         h('button', { type: 'button', disabled: busy, text: auto ? '暫停自動分組' : '恢復自動分組',
           onclick: function () { run('admin_config', { values: { autoGroup: !auto } }, auto ? '已暫停自動分組' : '已恢復自動分組'); } })
@@ -535,18 +538,21 @@
     } else {
       kids.push(h('div', { class: 'row' }, [
         h('button', { class: 'primary', type: 'button', disabled: busy || !pv.waiting, text: o.label, onclick: function () { arm(o.key); } }),
-        h('span', { class: 'small muted', text: '每個人都會分到組，人數不整除時部分組別多一些' })
+        h('span', { class: 'small muted', text: '每個人都會分到組；不滿 ' + s.info.groupMin + ' 人也先分，之後有人加入再補進不足的組' })
       ]));
     }
     if (s.flushResult) kids.push(h('p', { class: 'small', text: '上次結果：分了 ' + s.flushResult.grouped + ' 人，新增 ' + s.flushResult.newGroups + ' 組。' }));
     return h('section', { class: 'card' }, kids);
   }
 
-  function dangerCard() {
+  function dangerCard(s) {
+    var manual = !!s && s.info.autoGroup === false;
     return h('section', { class: 'card danger-zone' }, [
       h('h2', { text: '危險操作' }),
-      dangerAction({ key: 'regroup', label: '重新分組', action: 'admin_regroup', go: '確定重新分組', done: '已重新分組',
-        desc: '清掉所有組別，成員名單不變，依目前階段重新隨機分一次。組別編號會從 G01 重來。' }),
+      dangerAction({ key: 'regroup', label: '重新分發', action: 'admin_regroup', go: '確定重新分發', done: manual ? '已重新分發，大家回到等待中' : '已重新分發',
+        desc: manual
+          ? '清掉所有組別，成員名單不變，所有人回到「等待中」。之後大家（或你）再按「立刻分組」才會重新分，組別編號從 G01 重來。'
+          : '清掉所有組別，成員名單不變，並依目前階段立刻重新隨機分一次。組別編號從 G01 重來。' }),
       dangerAction({ key: 'reset', label: '清空全部（Reset）', action: 'admin_reset', extra: { confirm: 'RESET' },
         go: '確定清空', done: '已清空所有報名與組別',
         desc: '刪除所有成員與組別，並重設 flush 旗標。config 與邀請碼不受影響。無法復原，建議先備份 Sheet。' }),
@@ -607,7 +613,7 @@
   function render() {
     if (!state) return;
     view.textContent = '';
-    [overview(state), selfModeCard(state), flushCard(state), settingsCard(state), groupsCard(state), membersCard(state), enrollCard(state), diagCard(), dangerCard()].forEach(function (n) { if (n) view.appendChild(n); });
+    [overview(state), selfModeCard(state), flushCard(state), settingsCard(state), groupsCard(state), membersCard(state), enrollCard(state), diagCard(), dangerCard(state)].forEach(function (n) { if (n) view.appendChild(n); });
     reloadBtn.hidden = false;
   }
 

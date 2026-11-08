@@ -89,7 +89,7 @@
   /* 這兩個值公開沒關係。邀請碼不要放在前端。 */
   var LIFF_ID = '2012341027-MJ9CKosb';
   var GAS_URL = 'https://script.google.com/macros/s/AKfycbwqSmMUMeupZ80c5r3iX5-cKj5a4oHzmfMYhYLPs5Ulae2VRxwnhTBRZlwpDw0SoFAY/exec';
-  var REFRESH_MS = 60000;
+  var REFRESH_MS = 60000, lastPoll = Date.now();
 
   var ERR = {
     bad_code: '邀請碼不正確。',
@@ -398,18 +398,18 @@
         appliedSeq = Math.max(appliedSeq, seq);
         if (r.status === 'grouped') return render(r);
         render(r);
-        var m = document.getElementById('sg-msg'); if (m) m.textContent = '目前等待的人數還不夠成組（至少 ' + info.groupMin + ' 人），有更多人加入後再按一次。';
+        var m = document.getElementById('sg-msg'); if (m) m.textContent = '目前沒有可分的人，請稍後再試。';
       }).catch(function (e) { msg.textContent = errText(e); btn.disabled = false; });
     } });
     msg.id = 'sg-msg';
-    return h('div', { class: 'sg' }, [h('p', { class: 'hint', text: '人到齊了？按下去會立刻把目前等待的人分組（' + sizeText(info) + '，人數不整除時部分組別會多一些人）。' }), btn, msg]);
+    return h('div', { class: 'sg' }, [h('p', { class: 'hint', text: '大家可按可不按：只要有一個人按，就會幫所有等待的人分組（' + sizeText(info) + '，人數不夠也會先分）。之後才加入的人，按了會補進人數不足的組。' }), btn, msg]);
   }
 
   function renderWaiting(r) {
     var info = r.info || {};
     var hint;
     if (info.autoGroup === false && info.phase !== 'ended') {
-      hint = '管理員會在人到齊後統一分組（' + sizeText(info) + '，人數不整除時部分組別會多一些人），分好組這裡會自動顯示，請稍候。';
+      hint = '任何人按下「立刻分組」或由管理員分組後，這裡會自動顯示你的組別（' + sizeText(info) + '）。';
     } else if (info.phase === 'early') {
       hint = '等待人數達 ' + info.batchThreshold + ' 人，或 ' + fmt(info.deadline) + ' 截止時，系統會隨機分組。';
     } else if (info.phase === 'late') {
@@ -509,7 +509,12 @@
   function pollable() {
     return document.visibilityState === 'visible' && current && current.status !== 'unregistered';
   }
-  setInterval(function () { if (pollable()) refresh(true); }, REFRESH_MS);
+  /* 等待中且開放自助分組：每 15 秒看一次是否已被別人分組；其餘 60 秒 */
+  setInterval(function () {
+    if (!pollable()) return;
+    var fast = current && current.status === 'waiting' && current.info && current.info.selfGroup;
+    if (fast || Date.now() - lastPoll >= REFRESH_MS) { lastPoll = Date.now(); refresh(true); }
+  }, 15000);
   document.addEventListener('visibilitychange', function () { if (pollable()) refresh(true); });
   document.getElementById('reload').addEventListener('click', function () { refresh(false); });
 
