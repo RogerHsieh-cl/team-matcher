@@ -69,6 +69,11 @@
   .danger-zone h2 { color: var(--bad); }
   .action { display: grid; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
   .action:first-of-type { border-top: 0; padding-top: 0; }
+  .modal-back { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 50; }
+  .modal { background: var(--card); color: var(--ink); border: 1px solid var(--line); border-radius: 14px; padding: 18px; width: min(420px, 100%); display: grid; gap: 12px; }
+  .modal h3 { margin: 0; font-size: 1.05rem; }
+  .modal p { margin: 0; }
+  .modal .btns { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
   .confirm { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; background: var(--bad-soft); padding: 10px; border-radius: 8px; }
   .confirm input { flex: 1 1 8rem; min-width: 0; }
   .toast { position: sticky; top: max(8px, env(safe-area-inset-top)); z-index: 5; padding: 10px 14px; border-radius: 8px; background: var(--soft); color: var(--accent); font-weight: 600; }
@@ -417,20 +422,26 @@
   }
 
   /* 兩段式確認。viewer 不一定允許 confirm()，所以確認區做在頁面裡。 */
+  /* 頁內 yes/no 視窗（LINE 內建瀏覽器的原生 confirm 不穩定，所以自己畫）。回傳 Promise<boolean> */
+  function askYesNo(title, msg, yesText) {
+    return new Promise(function (resolve) {
+      var prevFocus = document.activeElement;
+      function close(v) { document.removeEventListener('keydown', onKey); back.remove(); try { prevFocus && prevFocus.focus(); } catch (_) {} resolve(v); }
+      function onKey(ev) { if (ev.key === 'Escape') close(false); }
+      var no = h('button', { type: 'button', text: '否，取消', onclick: function () { close(false); } });
+      var yes = h('button', { class: 'danger', type: 'button', text: yesText || '是，確定', onclick: function () { close(true); } });
+      var back = h('div', { class: 'modal-back', role: 'dialog', 'aria-modal': 'true', 'aria-label': title, onclick: function (ev) { if (ev.target === back) close(false); } }, [
+        h('div', { class: 'modal' }, [h('h3', { text: title }), h('p', { text: msg }), h('div', { class: 'btns' }, [no, yes])])
+      ]);
+      document.body.appendChild(back); document.addEventListener('keydown', onKey); no.focus();   /* 預設focus在「否」，避免手滑 */
+    });
+  }
+
   function dangerAction(o) {
-    var box;
-    if (armed === o.key) {
-      var input = o.typed ? h('input', { type: 'text', placeholder: '輸入「' + o.typed + '」', 'aria-label': '確認字串', autocomplete: 'off' }) : null;
-      var go = h('button', { class: 'danger', type: 'button', text: o.go, onclick: function () {
-        if (o.typed && input.value.trim() !== o.typed) { toast('請輸入「' + o.typed + '」才能執行。', true); return; }
-        run(o.action, o.extra, o.done);
-      } });
-      var cancel = h('button', { type: 'button', text: '取消', onclick: function () { armed = null; render(); } });
-      box = h('div', { class: 'confirm' }, [input, go, cancel]);
-    } else {
-      box = h('div', {}, [h('button', { class: 'outline-danger', type: 'button', disabled: busy, text: o.label, onclick: function () { arm(o.key); } })]);
-    }
-    return h('div', { class: 'action' }, [h('strong', { text: o.label }), h('p', { class: 'small muted', text: o.desc }), box]);
+    var btn = h('button', { class: 'outline-danger', type: 'button', disabled: busy, text: o.label, onclick: function () {
+      askYesNo(o.label + '？', o.desc, o.go).then(function (ok) { if (ok) run(o.action, o.extra, o.done); });
+    } });
+    return h('div', { class: 'action' }, [h('strong', { text: o.label }), h('p', { class: 'small muted', text: o.desc }), h('div', {}, [btn])]);
   }
 
   /* 診斷：一次檢查後端設定、旗標、觸發器、資料一致性、速度與近 24 小時紀錄；可複製成純文字貼給別人看 */
@@ -536,7 +547,7 @@
       h('h2', { text: '危險操作' }),
       dangerAction({ key: 'regroup', label: '重新分組', action: 'admin_regroup', go: '確定重新分組', done: '已重新分組',
         desc: '清掉所有組別，成員名單不變，依目前階段重新隨機分一次。組別編號會從 G01 重來。' }),
-      dangerAction({ key: 'reset', label: '清空全部（Reset）', action: 'admin_reset', extra: { confirm: 'RESET' }, typed: '重置',
+      dangerAction({ key: 'reset', label: '清空全部（Reset）', action: 'admin_reset', extra: { confirm: 'RESET' },
         go: '確定清空', done: '已清空所有報名與組別',
         desc: '刪除所有成員與組別，並重設 flush 旗標。config 與邀請碼不受影響。無法復原，建議先備份 Sheet。' }),
       dangerAction({ key: 'flags', label: '重設 flush 旗標', action: 'admin_reset_flags', go: '確定重設', done: '已重設旗標',
