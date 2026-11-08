@@ -398,7 +398,7 @@
         appliedSeq = Math.max(appliedSeq, seq);
         if (r.status === 'grouped') return render(r);
         render(r);
-        var m = document.getElementById('sg-msg'); if (m) m.textContent = '目前等待的人數還不夠成組，有更多人加入後再按一次。';
+        var m = document.getElementById('sg-msg'); if (m) m.textContent = '目前等待的人數還不夠成組（至少 ' + info.groupMin + ' 人），有更多人加入後再按一次。';
       }).catch(function (e) { msg.textContent = errText(e); btn.disabled = false; });
     } });
     msg.id = 'sg-msg';
