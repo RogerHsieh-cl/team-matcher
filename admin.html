@@ -309,8 +309,8 @@
         stat('等待中', s.counts.waiting),
         stat('組別數', s.counts.groups)
       ]),
-      h('p', { class: 'small muted', text: '截止 ' + fmt(s.info.deadline) + (s.flags.deadline ? '（已 flush）' : '（未 flush）') +
-        '　關閉 ' + fmt(s.info.closeAt) + (s.flags.close ? '（已 flush）' : '（未 flush）') }),
+      h('p', { class: 'small muted', text: '截止 ' + fmt(s.info.deadline) + (s.flags.deadline ? '（已處理）' : '（尚未處理）') +
+        '　關閉 ' + fmt(s.info.closeAt) + (s.flags.close ? '（已處理）' : '（尚未處理）') }),
     ]);
   }
 
@@ -361,7 +361,7 @@
       h('h3', { text: '時程' }),
       field('deadline', 'datetime-local', '截止：等待中的人全部分完'),
       field('closeAt', 'datetime-local', '關閉報名並做最後一次處理，設在開課前，必須晚於截止'),
-      h('p', { class: 'small muted', text: '時間改到還沒到時，對應的 flush 旗標會自動重設，到新時間再跑一次。' }),
+      h('p', { class: 'small muted', text: '時間改到還沒到時，系統會自動讓「到時間的處理」重新計時，到新時間再跑一次。' }),
       h('h3', { text: '學員操作' }),
       field('requireCode', 'select', '關閉後，學員頁不顯示邀請碼輸入框，知道連結的人按「加入」就能報名', { opts: [['true', '要輸入邀請碼'], ['false', '不用輸入（前台不顯示）']] }),
       field('selfGroup', 'select', '開啟後，等待中的學員會看到「立刻分組」按鈕，可自己觸發分組（不動既有組別，湊不成組的人繼續等待）', { opts: [['false', '不顯示按鈕'], ['true', '顯示按鈕']] }),
@@ -559,9 +559,7 @@
           : '清掉所有組別，成員名單不變，並依目前階段立刻重新隨機分一次。組別編號從 G01 重來。' }),
       dangerAction({ key: 'reset', label: '清空全部（Reset）', action: 'admin_reset', extra: { confirm: 'RESET' },
         go: '確定清空', done: '已清空所有報名與組別',
-        desc: '刪除所有成員與組別，並重設 flush 旗標。config 與邀請碼不受影響。無法復原，建議先備份 Sheet。' }),
-      dangerAction({ key: 'flags', label: '重設 flush 旗標', action: 'admin_reset_flags', go: '確定重設', done: '已重設旗標',
-        desc: '改了 deadline 或 closeAt 之後使用，讓截止與關閉的 flush 可以再跑一次。不會動到成員與組別。' })
+        desc: '刪除所有成員與組別，下一次活動會重新開始計時處理。config 與邀請碼不受影響。無法復原，建議先備份 Sheet。' })
     ]);
   }
 
