@@ -316,7 +316,7 @@
 
   /* 設定：課程題目與日期、截止與關閉、人數。輸入中的內容存在 draft，重畫畫面時不會被洗掉 */
   var FIELD = { siteTitle: '頁面標題', groupLink: '分組連結', classTitle: '課程題目', classDate: '上課日期', classTeacher: '本周教師', classNote: '地點或備註', deadline: '截止時間', closeAt: '關閉時間',
-                classQuestions: '討論問題', groupMin: '每組最少人數', groupMax: '每組最多人數', batchThreshold: '批次分組門檻', maxParticipants: '報名人數上限', finalOverflow: '關閉時落單者併入已滿組別', autoGroup: '分組方式', requireCode: '輸入邀請碼', selfGroup: '學員自助分組按鈕' };
+                classQuestions: '討論問題', groupMin: '每組最少人數', groupMax: '每組最多人數', batchThreshold: '批次分組門檻', maxParticipants: '報名人數上限', finalOverflow: '關閉時落單者併入已滿組別', autoGroup: '分組方式', showTitle: '題目：學員頁顯示', showDate: '日期：學員頁顯示', showTeacher: '教師：學員頁顯示', showQuestions: '討論問題：學員頁顯示', requireCode: '輸入邀請碼', selfGroup: '學員自助分組按鈕' };
   var draft = null;
   function dt(v) { return String(v || '').replace(' ', 'T'); }          /* yyyy-MM-dd HH:mm → datetime-local */
   /* 落單者併入人數最少的組，該組會超過「每組最多人數」；標示跟著目前輸入的最多人數走 */
@@ -350,10 +350,14 @@
       field('groupLink', 'text', '分組後顯示給學員的連結（LINE 社群、共同文件等），https:// 開頭，可留白', { maxlength: '300', placeholder: 'https://line.me/ti/g2/...' }),
       h('h3', { text: '課程' }),
       field('classTitle', 'text', '顯示在學員頁面最上方，最多 60 字', { maxlength: '60', placeholder: '例如：合一' }),
+      field('showTitle', 'select', '還沒決定題目時先關掉；內容不會被清掉，也不會送到學員端', { opts: [['true', '顯示給學員'], ['false', '先不顯示（內容保留，之後打開才顯示）']] }),
       field('classDate', 'datetime-local', '可留白'),
+      field('showDate', 'select', '', { opts: [['true', '顯示給學員'], ['false', '先不顯示（內容保留，之後打開才顯示）']] }),
       field('classTeacher', 'text', '本周教師，最多 60 字', { maxlength: '60', placeholder: '例如：謝弟兄' }),
+      field('showTeacher', 'select', '', { opts: [['true', '顯示給學員'], ['false', '先不顯示（內容保留，之後打開才顯示）']] }),
       field('classNote', 'text', '地點或備註，最多 200 字', { maxlength: '200', placeholder: '例如：二樓長老定額組教室' }),
       field('classQuestions', 'textarea', '一格就好，可以換行（Enter），最多 1000 字。學員頁面會照換行顯示', { maxlength: '1000', placeholder: '1. 什麼是以基督為中心的合一？\n2. 我可以為所屬的小組做什麼？' }),
+      field('showQuestions', 'select', '', { opts: [['true', '顯示給學員'], ['false', '先不顯示（內容保留，之後打開才顯示）']] }),
       h('h3', { text: '時程' }),
       field('deadline', 'datetime-local', '截止：等待中的人全部分完'),
       field('closeAt', 'datetime-local', '關閉報名並做最後一次處理，設在開課前，必須晚於截止'),
